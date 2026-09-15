@@ -5,9 +5,11 @@
   var TOKEN_KEY = "diario-aloncinho-token";
   var PERIOD_KEY = "diario-aloncinho-periodo";
   var selectedCategory = "cafe";
-  var periodDays = 30;
+  // days === 0 é "tudo"; from/to são "AAAA-MM-DD" e, quando preenchidos, mandam.
+  var period = { days: 30, from: "", to: "" };
   var pendingItems = [];
   var previewUrl = "";
+  var selectedPhoto = null;
   var latestEstimate = null;
   var toastTimer = 0;
   var webMcpController = null;
@@ -125,7 +127,15 @@
   var estimateResultContent = document.getElementById("estimate-result-content");
   var addEstimateItems = document.getElementById("add-estimate-items");
   var mealPhoto = document.getElementById("meal-photo");
+  var mealCamera = document.getElementById("meal-camera");
+  var takePhoto = document.getElementById("take-photo");
+  var pickPhoto = document.getElementById("pick-photo");
   var photoPreview = document.getElementById("photo-preview");
+  var photoThumb = document.getElementById("photo-thumb");
+  var photoThumbImage = document.getElementById("photo-thumb-image");
+  var periodFrom = document.getElementById("period-from");
+  var periodTo = document.getElementById("period-to");
+  var clearDateFilter = document.getElementById("clear-date-filter");
   var medicalOrientationForm = document.getElementById("medical-orientation-form");
   var medicalOrientationInput = document.getElementById("medical-orientation-input");
   var medicalOrientationDisplay = document.getElementById("medical-orientation-display");
@@ -145,8 +155,53 @@
       meals: [],
       medicalOrientation: { text: "", updatedAt: "" },
       parameters: { rows: [], note: "" },
-      favorites: []
+      favorites: [],
+      templates: []
     };
+  }
+
+  // Refeição padrão: uma combinação de itens guardada com nome, mais o histórico
+  // de uso (quantas vezes e quando foi a última). Nada daqui entra no diário
+  // sozinho: continua passando pelo "Salvar refeição".
+  function normalizeTemplates(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter(function (template) {
+        return template && typeof template.name === "string" && template.name.trim() &&
+          Array.isArray(template.items) && template.items.length;
+      })
+      .map(function (template) {
+        var uses = Number(template.uses);
+        return {
+          id: typeof template.id === "string" && template.id ? template.id : entryId("padrao"),
+          name: template.name.trim().slice(0, 80),
+          category: Object.prototype.hasOwnProperty.call(mealLabels, template.category)
+            ? template.category
+            : "cafe",
+          createdAt: typeof template.createdAt === "string" ? template.createdAt : "",
+          lastUsedAt: typeof template.lastUsedAt === "string" ? template.lastUsedAt : "",
+          uses: Number.isFinite(uses) && uses > 0 ? Math.floor(uses) : 0,
+          items: template.items
+            .filter(function (item) {
+              return item && typeof item.name === "string" && item.name.trim() &&
+                Number.isFinite(Number(item.min)) && Number.isFinite(Number(item.max)) &&
+                Number(item.min) >= 0 && Number(item.max) >= Number(item.min);
+            })
+            .slice(0, 20)
+            .map(function (item) {
+              return {
+                name: item.name.trim().slice(0, 80),
+                min: Number(item.min),
+                max: Number(item.max),
+                source: Object.prototype.hasOwnProperty.call(sourceLabels, item.source)
+                  ? item.source
+                  : "descricao"
+              };
+            })
+        };
+      })
+      .filter(function (template) { return template.items.length; })
+      .slice(0, 24);
   }
 
   // Guarda o NOME da medida, não o índice: a tabela de alimentos pode mudar.
@@ -202,7 +257,8 @@
           }
           : { text: "", updatedAt: "" },
         parameters: normalizeParameters(parsed.parameters),
-        favorites: normalizeFavorites(parsed.favorites)
+        favorites: normalizeFavorites(parsed.favorites),
+        templates: normalizeTemplates(parsed.templates)
       };
     } catch (error) {
       return blankState();
@@ -370,28 +426,34 @@
       });
   }
 
-  // periodDays === 0 significa "tudo"; as leituras já chegam ordenadas da mais recente.
-  function readingsInPeriod() {
-    var readings = validReadings();
-    if (!periodDays) return readings;
-    var cutoff = Date.now() - periodDays * 86400000;
-    return readings.filter(function (reading) {
-      return new Date(reading.timestamp).getTime() >= cutoff;
-    });
+  function usingDateFilter() {
+    return Boolean(period.from || period.to);
   }
 
-  function isToday(value) {
-    var date = new Date(value);
-    return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString();
+  function periodRange() {
+    return window.DiaryStats.bounds(period);
   }
 
-  function carbsToday() {
-    return state.meals
-      .filter(function (meal) { return isToday(meal.recordedAt); })
-      .reduce(function (sum, meal) {
-        var totals = mealTotals(Array.isArray(meal.items) ? meal.items : []);
-        return sum + carbMidpoint(totals.min, totals.max);
-      }, 0);
+  function mealsInPeriod(range) {
+    return window.DiaryStats.filterByRange(state.meals, range || periodRange(), "recordedAt");
+  }
+
+  function carbsIn(meals) {
+    return meals.reduce(function (sum, meal) {
+      var totals = mealTotals(Array.isArray(meal.items) ? meal.items : []);
+      return sum + carbMidpoint(totals.min, totals.max);
+    }, 0);
+  }
+
+  // Texto do recorte em uso, para o painel nunca deixar dúvida sobre o que conta.
+  function periodLabel() {
+    if (usingDateFilter()) {
+      if (period.from && period.to) return "De " + formatDay(period.from) + " a " + formatDay(period.to);
+      if (period.from) return "A partir de " + formatDay(period.from);
+      return "Até " + formatDay(period.to);
+    }
+    if (!period.days) return "Todo o histórico";
+    return "Últimos " + period.days + " dias";
   }
 
   function relativeTime(value) {
@@ -411,6 +473,15 @@
       hour: "2-digit",
       minute: "2-digit"
     }).format(date);
+  }
+
+  // Só o dia: usado nos rótulos do filtro de data e no eixo de médias diárias.
+  function formatDay(value) {
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
+      ? new Date(value + "T12:00")
+      : new Date(value);
+    if (Number.isNaN(date.getTime())) return "sem data";
+    return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date);
   }
 
   function localDateTimeValue(date) {
@@ -473,9 +544,30 @@
 
   function clearSelectedPhoto() {
     mealPhoto.value = "";
+    mealCamera.value = "";
+    selectedPhoto = null;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     previewUrl = "";
+    photoThumbImage.removeAttribute("src");
+    photoThumb.hidden = true;
     photoPreview.textContent = "Nenhuma foto selecionada.";
+  }
+
+  // Câmera e galeria alimentam a mesma foto: quem escolhe uma descarta a outra.
+  function selectPhoto(file) {
+    if (!file) return;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    selectedPhoto = file;
+    previewUrl = URL.createObjectURL(file);
+    photoThumbImage.src = previewUrl;
+    photoThumb.hidden = false;
+    photoPreview.textContent = "Foto pronta. Ela só sai deste aparelho quando você pedir a estimativa.";
+    clearEstimateResult();
+  }
+
+  function setPhotoControlsEnabled(enabled) {
+    takePhoto.disabled = !enabled;
+    pickPhoto.disabled = !enabled;
   }
 
   function applyStoredToken() {
@@ -495,7 +587,7 @@
 
   function resetEstimateForm() {
     aiEstimateForm.reset();
-    mealPhoto.disabled = true;
+    setPhotoControlsEnabled(false);
     clearSelectedPhoto();
     clearEstimateResult();
     setEstimateStatus("", false);
@@ -591,7 +683,7 @@
     }
 
     // A foto é o único dado que exige autorização explícita; o texto você digitou e enviou.
-    var file = estimateConsent.checked && mealPhoto.files ? mealPhoto.files[0] : null;
+    var file = estimateConsent.checked ? selectedPhoto : null;
     var imageDataUrl = await readPhotoAsDataUrl(file);
     var response;
     var responseBody;
@@ -638,9 +730,13 @@
     var chart = document.getElementById("glucose-trend-chart");
     var empty = document.getElementById("trend-empty");
     var summary = document.getElementById("trend-summary");
-    var points = readings.slice(0, 14).reverse().map(function (reading) {
-      return { value: Number(reading.value), timestamp: reading.timestamp };
-    });
+    var note = document.getElementById("trend-note");
+    var series = window.DiaryStats.trendSeries(readings, 14);
+    var points = series.points;
+    var byDay = series.mode === "dias";
+    var labelFor = function (point) { return byDay ? formatDay(point.timestamp) : formatDate(point.timestamp); };
+
+    note.textContent = byDay ? "uma média por dia no período" : "cada medição do período";
 
     if (points.length < 2) {
       chart.innerHTML = '<title id="trend-chart-title">Tendência de glicose</title><desc id="trend-chart-description">Registre ao menos duas medições para visualizar a tendência.</desc>';
@@ -678,12 +774,19 @@
     var path = points.map(function (point, index) {
       return xFor(index).toFixed(1) + "," + yFor(point.value).toFixed(1);
     }).join(" ");
-    var dots = points.map(function (point, index) {
-      return '<circle class="trend-dot ' + classify(point.value) + '" cx="' + xFor(index).toFixed(1) + '" cy="' + yFor(point.value).toFixed(1) + '" r="4.5"><title>' + point.value + ' mg/dL</title></circle>';
+    // Acima de 40 pontos os círculos viram um borrão: a linha já conta a história.
+    var dots = points.length > 40 ? "" : points.map(function (point, index) {
+      var detail = point.daily
+        ? formatDay(point.timestamp) + ": média de " + point.value + " mg/dL em " +
+          point.count + (point.count === 1 ? " medição" : " medições")
+        : formatDate(point.timestamp) + ": " + point.value + " mg/dL";
+      return '<circle class="trend-dot ' + classify(point.value) + '" cx="' + xFor(index).toFixed(1) + '" cy="' + yFor(point.value).toFixed(1) + '" r="4.5"><title>' + escapeHtml(detail) + '</title></circle>';
     }).join("");
-    var firstDate = formatDate(points[0].timestamp);
-    var lastDate = formatDate(points[points.length - 1].timestamp);
-    var chartDescription = "Tendência de " + points.length + " medições registradas entre " + firstDate + " e " + lastDate + ".";
+    var firstDate = labelFor(points[0]);
+    var lastDate = labelFor(points[points.length - 1]);
+    var chartDescription = byDay
+      ? "Tendência da média diária de " + points.length + " dias com medições, entre " + firstDate + " e " + lastDate + "."
+      : "Tendência de " + points.length + " medições registradas entre " + firstDate + " e " + lastDate + ".";
 
     chart.innerHTML = '<title id="trend-chart-title">Tendência de glicose</title><desc id="trend-chart-description">' + escapeHtml(chartDescription) + '</desc>' +
       '<rect class="trend-range-band" x="' + left + '" y="' + rangeTop.toFixed(1) + '" width="' + plotWidth + '" height="' + (rangeBottom - rangeTop).toFixed(1) + '"></rect>' +
@@ -694,7 +797,10 @@
       '<text class="trend-axis" x="' + left + '" y="' + (height - 10) + '">' + escapeHtml(firstDate) + '</text>' +
       '<text class="trend-axis" x="' + (width - right) + '" y="' + (height - 10) + '" text-anchor="end">' + escapeHtml(lastDate) + '</text>';
     empty.hidden = true;
-    summary.textContent = "Exibe " + points.length + " medições salvas. A área destacada representa a faixa pessoal do painel: 80–190 mg/dL.";
+    summary.textContent = (byDay
+      ? "Exibe a média diária de " + points.length + " dias com medições em " + periodLabel().toLowerCase() + "."
+      : "Exibe " + points.length + " medições salvas em " + periodLabel().toLowerCase() + ".") +
+      " A área destacada representa a faixa pessoal do painel: 80–190 mg/dL. O gráfico usa medições registradas e não prevê resultados futuros.";
   }
 
   function renderMedicalOrientation() {
@@ -957,7 +1063,7 @@
     var summary = getDiarySummary();
     var title = "Relatório do Diário do Aloncinho";
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + title + '</title><style>' +
-      '@page{size:A4;margin:18mm}body{font-family:Arial,sans-serif;color:#102a36;font-size:12px;line-height:1.45}h1{font-size:22px;margin:0 0 5px}h2{font-size:15px;margin:25px 0 8px;color:#006a6b}.meta{color:#52666c;margin:0}.notice{margin:18px 0;padding:10px 12px;border-left:4px solid #006a6b;background:#eef8f5}.metrics{display:flex;gap:10px;margin:14px 0}.metric{border:1px solid #d9e6e0;padding:9px;min-width:105px}.metric strong{display:block;font-size:18px}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #cbd9d7;padding:7px;vertical-align:top;text-align:left}th{background:#eef8f5}@media print{body{font-size:11px}.no-print{display:none}}</style></head><body>' +
+      '@page{size:A4;margin:18mm}body{font-family:Arial,sans-serif;color:#0b113a;font-size:12px;line-height:1.45}h1{font-size:22px;margin:0 0 5px}h2{font-size:15px;margin:25px 0 8px;color:#2f6f72}.meta{color:#667090;margin:0}.notice{margin:18px 0;padding:10px 12px;border-left:4px solid #67a1a4;background:#eef5f5}.metrics{display:flex;gap:10px;margin:14px 0}.metric{border:1px solid #dde2ec;padding:9px;min-width:105px}.metric strong{display:block;font-size:18px}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border:1px solid #dde2ec;padding:7px;vertical-align:top;text-align:left}th{background:#eef5f5}@media print{body{font-size:11px}.no-print{display:none}}</style></head><body>' +
       '<h1>' + title + '</h1><p class="meta">Gerado em ' + escapeHtml(formatDate(new Date().toISOString())) + '</p>' +
       '<p class="notice">Ferramenta de registro e apoio. Não substitui orientação médica e não realiza cálculo de dose.</p>' +
       '<h2>Resumo da faixa pessoal do dashboard</h2><div class="metrics"><div class="metric"><span>Faixa</span><strong>80–190</strong><small>mg/dL</small></div><div class="metric"><span>Medições na faixa</span><strong>' + (summary.validReadingCount ? Math.round(summary.inRangeReadingCount / summary.validReadingCount * 100) + "%" : "—") + '</strong><small>' + summary.inRangeReadingCount + " de " + summary.validReadingCount + ' leituras</small></div><div class="metric"><span>Refeições</span><strong>' + summary.mealCount + '</strong><small>salvas no diário</small></div></div>' +
@@ -981,35 +1087,97 @@
     }).format(new Date());
   }
 
-  function renderInsights(readings) {
+  // Variação contra o período anterior de mesma duração. Só o percentual de
+  // medições na faixa ganha cor, porque subir já é o objetivo declarado deste
+  // painel. A média aparece sem juízo de valor: o app não interpreta glicemia.
+  function renderDelta(element, current, previous, unit, higherIsBetter) {
+    if (current === null || previous === null) {
+      element.hidden = true;
+      return;
+    }
+    var difference = Math.round(current - previous);
+    if (!difference) {
+      element.textContent = "igual ao período anterior";
+      element.className = "delta steady";
+      element.hidden = false;
+      return;
+    }
+    var tone = "neutral";
+    if (higherIsBetter !== null) tone = (higherIsBetter ? difference > 0 : difference < 0) ? "better" : "worse";
+    element.textContent = (difference > 0 ? "▲ +" : "▼ ") + difference + unit + " vs. período anterior";
+    element.className = "delta " + tone;
+    element.hidden = false;
+  }
+
+  function averageOf(readings) {
+    var value = window.DiaryStats.average(readings.map(function (reading) { return Number(reading.value); }));
+    return value === null ? null : Math.round(value);
+  }
+
+  function inRangePercent(readings) {
+    if (!readings.length) return null;
+    var inside = readings.filter(function (reading) { return classify(Number(reading.value)) === "range"; });
+    return Math.round((inside.length / readings.length) * 100);
+  }
+
+  function renderInsights(readings, range) {
     var last = readings[0];
     document.getElementById("insight-last").textContent = last ? last.value + " mg/dL" : "—";
     document.getElementById("insight-last-detail").textContent = last
       ? statusText(classify(Number(last.value))) + " · " + relativeTime(last.timestamp)
       : "Nenhuma medição no período";
 
-    var average = readings.length
-      ? Math.round(readings.reduce(function (sum, reading) { return sum + Number(reading.value); }, 0) / readings.length)
-      : null;
+    var average = averageOf(readings);
     document.getElementById("insight-average").textContent = average === null ? "—" : average + " mg/dL";
     document.getElementById("insight-average-detail").textContent = readings.length
       ? readings.length + (readings.length === 1 ? " medição no período" : " medições no período")
       : "Sem medições no período";
 
-    var mealsToday = state.meals.filter(function (meal) { return isToday(meal.recordedAt); }).length;
-    document.getElementById("insight-carbs").textContent = mealsToday ? "≈ " + formatGrams(carbsToday()) : "—";
-    document.getElementById("insight-carbs-detail").textContent = mealsToday
-      ? mealsToday + (mealsToday === 1 ? " refeição salva hoje" : " refeições salvas hoje")
-      : "Nenhuma refeição salva hoje";
+    var previous = window.DiaryStats.previousBounds(range);
+    var previousReadings = previous ? window.DiaryStats.filterByRange(validReadings(), previous) : [];
+    renderDelta(
+      document.getElementById("insight-average-delta"),
+      average,
+      previousReadings.length ? averageOf(previousReadings) : null,
+      " mg/dL",
+      null
+    );
+    renderDelta(
+      document.getElementById("range-delta"),
+      inRangePercent(readings),
+      previousReadings.length ? inRangePercent(previousReadings) : null,
+      " pontos",
+      true
+    );
+
+    var days = window.DiaryStats.daySpan(range, readings);
+    var perDay = days && readings.length ? readings.length / days : null;
+    document.getElementById("insight-frequency").textContent = perDay === null
+      ? "—"
+      : new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(perDay) + "×";
+    document.getElementById("insight-frequency-detail").textContent = perDay === null
+      ? "Mostra a constância do registro"
+      : readings.length + " em " + days + (days === 1 ? " dia" : " dias");
+
+    var meals = mealsInPeriod(range);
+    var carbsPerDay = days && meals.length ? carbsIn(meals) / days : null;
+    document.getElementById("insight-carbs").textContent = carbsPerDay === null
+      ? "—"
+      : "≈ " + formatGrams(Math.round(carbsPerDay));
+    document.getElementById("insight-carbs-detail").textContent = meals.length
+      ? meals.length + (meals.length === 1 ? " refeição no período" : " refeições no período")
+      : "Nenhuma refeição salva no período";
   }
 
   function renderDashboard() {
     // O painel segue o período escolhido; a lista de medições mostra sempre tudo,
     // para nenhum registro parecer perdido por causa do filtro.
     var allReadings = validReadings();
-    var readings = readingsInPeriod();
+    var range = periodRange();
+    var readings = window.DiaryStats.filterByRange(allReadings, range);
     var counts = { below: 0, range: 0, above: 0 };
 
+    document.getElementById("period-label").textContent = periodLabel();
     renderTrend(readings);
 
     readings.forEach(function (reading) {
@@ -1032,7 +1200,7 @@
     document.getElementById("range-segment").style.width = readings.length ? (counts.range / total) * 100 + "%" : "100%";
     document.getElementById("above-segment").style.width = (counts.above / total) * 100 + "%";
 
-    renderInsights(readings);
+    renderInsights(readings, range);
 
     var recent = document.getElementById("recent-readings");
     if (!allReadings.length) {
@@ -1107,6 +1275,48 @@
     }).join("");
   }
 
+  function templateHistory(template) {
+    if (!template.uses) {
+      return template.createdAt ? "salva em " + formatDay(template.createdAt) : "ainda não usada";
+    }
+    return "usada " + template.uses + (template.uses === 1 ? " vez" : " vezes") +
+      (template.lastUsedAt ? " · última em " + formatDay(template.lastUsedAt) : "");
+  }
+
+  function renderTemplates() {
+    var target = document.getElementById("meal-templates");
+    // Mais usadas primeiro: o atalho fica onde a mão já procura.
+    var templates = state.templates.slice().sort(function (a, b) {
+      return b.uses - a.uses || (b.lastUsedAt || "").localeCompare(a.lastUsedAt || "");
+    });
+
+    if (!templates.length) {
+      target.innerHTML = '<div class="empty-state compact"><span aria-hidden="true">☆</span>' +
+        '<h3>Nenhuma refeição padrão ainda.</h3>' +
+        '<p>Monte uma refeição logo abaixo e toque em “Salvar como refeição padrão”.</p></div>';
+      return;
+    }
+
+    target.innerHTML = templates.map(function (template) {
+      var totals = mealTotals(template.items);
+      var items = template.items.map(function (item) { return escapeHtml(item.name); }).join(", ");
+      return '<article class="template-card">' +
+        '<div class="template-top">' +
+        '<span class="template-category">' + escapeHtml(mealLabels[template.category]) + '</span>' +
+        '<span class="template-uses">' + escapeHtml(templateHistory(template)) + '</span>' +
+        '</div>' +
+        '<h4>' + escapeHtml(template.name) + '</h4>' +
+        '<p>' + items + '</p>' +
+        '<span class="template-total">' + formatCarbTotal(totals.min, totals.max) + ' de carboidratos' +
+        '<small>faixa: ' + formatRange(totals.min, totals.max) + '</small></span>' +
+        '<div class="template-actions">' +
+        '<button class="secondary-button" type="button" data-use-template="' + escapeHtml(template.id) + '">Usar</button>' +
+        '<button class="row-remove" type="button" data-remove-template="' + escapeHtml(template.id) + '" title="Remover refeição padrão" aria-label="Remover a refeição padrão ' + escapeHtml(template.name) + '">×</button>' +
+        '</div>' +
+        '</article>';
+    }).join("");
+  }
+
   function renderAll() {
     renderToday();
     renderDashboard();
@@ -1115,14 +1325,39 @@
     renderMedicalOrientation();
     renderParameters();
     renderFavorites();
+    renderTemplates();
   }
 
-  function selectPeriod(days) {
-    periodDays = Number.isFinite(days) && days >= 0 ? days : 30;
+  // Um recorte de cada vez: escolher datas desliga os atalhos e vice-versa,
+  // para o painel nunca mostrar um total que não bate com o filtro visível.
+  function applyPeriod() {
+    var byDate = usingDateFilter();
+    periodFrom.value = period.from;
+    periodTo.value = period.to;
+    clearDateFilter.hidden = !byDate;
     document.querySelectorAll(".period-chip").forEach(function (chip) {
-      chip.classList.toggle("active", Number(chip.dataset.period) === periodDays);
+      chip.classList.toggle("active", !byDate && Number(chip.dataset.period) === period.days);
     });
+    localStorage.setItem(PERIOD_KEY, JSON.stringify(period));
     renderDashboard();
+  }
+
+  function loadPeriod() {
+    try {
+      var stored = JSON.parse(localStorage.getItem(PERIOD_KEY) || "null");
+      // Versões anteriores guardavam só o número de dias.
+      if (typeof stored === "number" || typeof stored === "string") {
+        var days = Number(stored);
+        if (Number.isFinite(days) && days >= 0) period.days = days;
+        return;
+      }
+      if (!stored) return;
+      if (Number.isFinite(Number(stored.days)) && Number(stored.days) >= 0) period.days = Number(stored.days);
+      period.from = window.DiaryStats.startOfDay(stored.from) === null ? "" : stored.from;
+      period.to = window.DiaryStats.startOfDay(stored.to) === null ? "" : stored.to;
+    } catch (error) {
+      // Preferência ilegível: segue com os 30 dias padrão.
+    }
   }
 
   function findFood(name) {
@@ -1450,9 +1685,33 @@
 
   document.querySelectorAll(".period-chip").forEach(function (chip) {
     chip.addEventListener("click", function () {
-      selectPeriod(Number(chip.dataset.period));
-      localStorage.setItem(PERIOD_KEY, String(periodDays));
+      var days = Number(chip.dataset.period);
+      period.days = Number.isFinite(days) && days >= 0 ? days : 30;
+      period.from = "";
+      period.to = "";
+      applyPeriod();
     });
+  });
+
+  [periodFrom, periodTo].forEach(function (field) {
+    field.addEventListener("change", function () {
+      period.from = periodFrom.value;
+      period.to = periodTo.value;
+      // Datas invertidas não recortam nada: troco em vez de mostrar painel vazio.
+      if (period.from && period.to && period.from > period.to) {
+        var swap = period.from;
+        period.from = period.to;
+        period.to = swap;
+        showToast("Datas trocadas de lugar para o período fazer sentido.");
+      }
+      applyPeriod();
+    });
+  });
+
+  clearDateFilter.addEventListener("click", function () {
+    period.from = "";
+    period.to = "";
+    applyPeriod();
   });
 
   estimateAccessToken.addEventListener("change", rememberTokenChoice);
@@ -1486,8 +1745,77 @@
     });
   });
 
+  document.getElementById("save-template").addEventListener("click", function () {
+    if (!pendingItems.length) {
+      showToast("Monte a refeição primeiro: a padrão guarda os itens que estão na lista.");
+      return;
+    }
+
+    var suggested = pendingItems.length === 1
+      ? pendingItems[0].name
+      : mealLabels[selectedCategory] + " de sempre";
+    var name = window.prompt("Como você quer chamar esta refeição padrão?", suggested);
+    if (name === null) return;
+    if (!name.trim()) {
+      showToast("Dê um nome para encontrar essa refeição depois.");
+      return;
+    }
+
+    state.templates.push({
+      id: entryId("padrao"),
+      name: name,
+      category: selectedCategory,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: "",
+      uses: 0,
+      items: pendingItems
+    });
+    state.templates = normalizeTemplates(state.templates);
+    saveState();
+    renderTemplates();
+    showToast('"' + name.trim() + '" salva nas refeições padrão.');
+  });
+
+  // Usar a padrão só preenche a lista de itens: o registro no diário continua
+  // dependendo do "Salvar refeição", como qualquer outra montagem.
+  document.getElementById("meal-templates").addEventListener("click", function (event) {
+    var removeId = event.target.dataset.removeTemplate;
+    if (removeId) {
+      if (!window.confirm("Remover esta refeição padrão? O que já foi salvo no diário continua lá.")) return;
+      state.templates = state.templates.filter(function (template) { return template.id !== removeId; });
+      saveState();
+      renderTemplates();
+      showToast("Refeição padrão removida.");
+      return;
+    }
+
+    var useId = event.target.dataset.useTemplate;
+    if (!useId) return;
+    var chosen = state.templates.find(function (template) { return template.id === useId; });
+    if (!chosen) return;
+
+    chosen.items.forEach(function (item) {
+      pendingItems.push({
+        id: entryId("item"),
+        name: item.name,
+        min: item.min,
+        max: item.max,
+        source: item.source
+      });
+    });
+
+    chosen.uses += 1;
+    chosen.lastUsedAt = new Date().toISOString();
+    saveState();
+    selectMeal(chosen.category);
+    renderPendingItems();
+    renderTemplates();
+    showToast('"' + chosen.name + '" carregada. Confira e salve como ' + mealLabels[chosen.category] + ".");
+    document.querySelector(".meal-workspace").scrollIntoView({ block: "start" });
+  });
+
   estimateConsent.addEventListener("change", function () {
-    mealPhoto.disabled = !estimateConsent.checked;
+    setPhotoControlsEnabled(estimateConsent.checked);
     if (!estimateConsent.checked) {
       clearSelectedPhoto();
       clearEstimateResult();
@@ -1495,16 +1823,14 @@
     }
   });
 
-  mealPhoto.addEventListener("change", function () {
-    var file = mealPhoto.files && mealPhoto.files[0];
-    if (!file) {
-      photoPreview.textContent = "Nenhuma foto selecionada.";
-      return;
-    }
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = URL.createObjectURL(file);
-    photoPreview.innerHTML = "Foto selecionada: <strong>" + escapeHtml(file.name) + "</strong>. Ela só será enviada ao pedir uma estimativa.";
-    clearEstimateResult();
+  takePhoto.addEventListener("click", function () { mealCamera.click(); });
+  pickPhoto.addEventListener("click", function () { mealPhoto.click(); });
+  document.getElementById("remove-photo").addEventListener("click", clearSelectedPhoto);
+
+  [mealCamera, mealPhoto].forEach(function (input) {
+    input.addEventListener("change", function () {
+      selectPhoto(input.files && input.files[0]);
+    });
   });
 
   [estimateDescription, estimatePortion, estimateAccessToken].forEach(function (field) {
@@ -1723,15 +2049,18 @@
     }
   });
 
-  var storedPeriod = localStorage.getItem(PERIOD_KEY);
   foodOptions.innerHTML = foods.map(function (food) {
     return '<option value="' + escapeHtml(food.name) + '"></option>';
   }).join("");
   renderFoodPicker();
   glucoseTime.value = localDateTimeValue(new Date());
+  // Ninguém mediu glicose no futuro: o filtro não deixa escolher depois de hoje.
+  periodFrom.max = window.DiaryStats.dayKey(new Date());
+  periodTo.max = periodFrom.max;
   applyStoredToken();
   selectMeal(mealForHour(new Date().getHours()));
-  selectPeriod(storedPeriod === null ? 30 : Number(storedPeriod));
+  loadPeriod();
+  applyPeriod();
   renderAll();
   installWebMcpTools();
 }());

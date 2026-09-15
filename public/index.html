@@ -8,12 +8,13 @@
       content="Diário pessoal de glicose e refeições com estimativa de carboidratos."
     />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f1f5f3" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#081318" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6f9" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070b1c" />
     <title>Diário do Aloncinho</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/csv.js" defer></script>
+    <script src="/stats.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -62,17 +63,34 @@
       <section class="range-panel" aria-labelledby="range-title">
         <div class="range-header">
           <div>
-            <p class="eyebrow">Painel de glicose</p>
+            <p class="eyebrow">Painel de acompanhamento</p>
             <h2 id="range-title">Faixa pessoal</h2>
           </div>
           <div class="range-number">80 <span>—</span> 190 <small>mg/dL</small></div>
         </div>
 
-        <div class="period-filter" role="group" aria-label="Período do painel">
-          <button class="period-chip" type="button" data-period="7">7 dias</button>
-          <button class="period-chip active" type="button" data-period="30">30 dias</button>
-          <button class="period-chip" type="button" data-period="0">Tudo</button>
+        <div class="dash-filters">
+          <div class="period-filter" role="group" aria-label="Período do painel">
+            <button class="period-chip" type="button" data-period="7">7 dias</button>
+            <button class="period-chip active" type="button" data-period="30">30 dias</button>
+            <button class="period-chip" type="button" data-period="90">90 dias</button>
+            <button class="period-chip" type="button" data-period="0">Tudo</button>
+          </div>
+          <div class="date-filter" role="group" aria-label="Filtrar por data">
+            <label class="date-field">
+              <span>De</span>
+              <input id="period-from" type="date" />
+            </label>
+            <label class="date-field">
+              <span>Até</span>
+              <input id="period-to" type="date" />
+            </label>
+            <button class="quiet-button clear-dates" id="clear-date-filter" type="button" hidden>
+              Limpar datas
+            </button>
+          </div>
         </div>
+        <p class="period-label" id="period-label">Últimos 30 dias</p>
 
         <div class="metric-grid">
           <article class="metric-card below">
@@ -94,6 +112,7 @@
             <span class="metric-label">Medições na faixa</span>
             <strong id="range-percent">—</strong>
             <small id="range-detail">Adicione a primeira medição</small>
+            <small id="range-delta" class="delta" hidden></small>
           </article>
         </div>
 
@@ -117,11 +136,17 @@
             <span>Média do período</span>
             <strong id="insight-average">—</strong>
             <small id="insight-average-detail">Aparece a partir da 1ª medição</small>
+            <small id="insight-average-delta" class="delta" hidden></small>
           </div>
           <div class="insight">
-            <span>Carboidratos hoje</span>
+            <span>Medições por dia</span>
+            <strong id="insight-frequency">—</strong>
+            <small id="insight-frequency-detail">Mostra a constância do registro</small>
+          </div>
+          <div class="insight">
+            <span>Carboidratos por dia</span>
             <strong id="insight-carbs">—</strong>
-            <small id="insight-carbs-detail">Nenhuma refeição salva hoje</small>
+            <small id="insight-carbs-detail">Nenhuma refeição salva no período</small>
           </div>
         </div>
       </section>
@@ -201,7 +226,7 @@
             <p class="eyebrow">Tendência</p>
             <h2 id="trend-title">Evolução das medições</h2>
           </div>
-          <span class="trend-note">últimas 14 leituras válidas</span>
+          <span class="trend-note" id="trend-note">acompanha o período do painel</span>
         </div>
         <div class="trend-chart-wrap">
           <svg id="glucose-trend-chart" class="trend-chart" viewBox="0 0 760 260" role="img" aria-labelledby="trend-chart-title trend-chart-description">
@@ -286,7 +311,7 @@
           <p>Escolha uma refeição e registre os itens com uma faixa de carboidratos.</p>
         </div>
 
-        <div class="meal-picker" role="list" aria-label="Escolher refeição">
+        <div class="meal-picker" role="group" aria-label="Escolher refeição">
           <button class="meal-choice active" type="button" data-category="cafe">
             <span class="meal-icon" aria-hidden="true">☼</span>
             <span>Café</span>
@@ -308,6 +333,17 @@
             <small>fim do dia</small>
           </button>
         </div>
+
+        <section class="templates-block" aria-labelledby="templates-title">
+          <div class="manual-entry-heading">
+            <div>
+              <p class="eyebrow">Refeições padrão</p>
+              <h4 id="templates-title">O que você repete sempre</h4>
+            </div>
+            <span>Monte a refeição, salve como padrão e reaproveite com um toque.</span>
+          </div>
+          <div id="meal-templates" class="meal-templates" aria-live="polite"></div>
+        </section>
 
         <div class="meal-workspace">
           <div class="meal-form-card">
@@ -389,7 +425,22 @@
                     <span>Autorizo enviar uma foto junto com a descrição para a estimativa de carboidratos.</span>
                   </label>
                   <div class="photo-controls">
-                    <input id="meal-photo" type="file" accept="image/jpeg,image/png,image/webp" disabled />
+                    <div class="photo-buttons">
+                      <button class="secondary-button" id="take-photo" type="button" disabled>
+                        <span aria-hidden="true">◉</span> Tirar foto
+                      </button>
+                      <button class="quiet-button" id="pick-photo" type="button" disabled>
+                        Escolher da galeria
+                      </button>
+                    </div>
+                    <!-- capture abre a câmera direto no celular; no computador o
+                         navegador cai no seletor de arquivos sozinho. -->
+                    <input id="meal-camera" type="file" accept="image/*" capture="environment" hidden />
+                    <input id="meal-photo" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+                    <figure class="photo-thumb" id="photo-thumb" hidden>
+                      <img id="photo-thumb-image" alt="Pré-visualização da foto escolhida" />
+                      <button class="chip-remove" id="remove-photo" type="button" aria-label="Remover foto">×</button>
+                    </figure>
                     <output id="photo-preview" aria-live="polite">Nenhuma foto selecionada.</output>
                   </div>
                 </div>
@@ -493,6 +544,9 @@
 
             <button id="save-meal" class="primary-button save-meal" type="button">
               Salvar refeição
+            </button>
+            <button id="save-template" class="quiet-button save-template" type="button">
+              Salvar como refeição padrão
             </button>
             <p class="calculation-boundary">Os dados registrados aqui não calculam insulina.</p>
           </aside>
