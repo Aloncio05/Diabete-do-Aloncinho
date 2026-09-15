@@ -315,15 +315,18 @@
     return window.DiaryStats.bounds(period);
   }
 
-  function mealsInPeriod(range) {
-    return window.DiaryStats.filterByRange(state.meals, range || periodRange(), "recordedAt");
+  function isToday(value) {
+    var date = new Date(value);
+    return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString();
   }
 
-  function carbsIn(meals) {
-    return meals.reduce(function (sum, meal) {
-      var totals = mealTotals(Array.isArray(meal.items) ? meal.items : []);
-      return sum + carbMidpoint(totals.min, totals.max);
-    }, 0);
+  function carbsToday() {
+    return state.meals
+      .filter(function (meal) { return isToday(meal.recordedAt); })
+      .reduce(function (sum, meal) {
+        var totals = mealTotals(Array.isArray(meal.items) ? meal.items : []);
+        return sum + carbMidpoint(totals.min, totals.max);
+      }, 0);
   }
 
   // Texto do recorte em uso, para o painel nunca deixar dúvida sobre o que conta.
@@ -611,13 +614,9 @@
     var chart = document.getElementById("glucose-trend-chart");
     var empty = document.getElementById("trend-empty");
     var summary = document.getElementById("trend-summary");
-    var note = document.getElementById("trend-note");
-    var series = window.DiaryStats.trendSeries(readings, 14);
-    var points = series.points;
-    var byDay = series.mode === "dias";
-    var labelFor = function (point) { return byDay ? formatDay(point.timestamp) : formatDate(point.timestamp); };
-
-    note.textContent = byDay ? "uma média por dia no período" : "cada medição do período";
+    var points = readings.slice(0, 14).reverse().map(function (reading) {
+      return { value: Number(reading.value), timestamp: reading.timestamp };
+    });
 
     if (points.length < 2) {
       chart.innerHTML = '<title id="trend-chart-title">Tendência de glicose</title><desc id="trend-chart-description">Registre ao menos duas medições para visualizar a tendência.</desc>';
@@ -655,19 +654,12 @@
     var path = points.map(function (point, index) {
       return xFor(index).toFixed(1) + "," + yFor(point.value).toFixed(1);
     }).join(" ");
-    // Acima de 40 pontos os círculos viram um borrão: a linha já conta a história.
-    var dots = points.length > 40 ? "" : points.map(function (point, index) {
-      var detail = point.daily
-        ? formatDay(point.timestamp) + ": média de " + point.value + " mg/dL em " +
-          point.count + (point.count === 1 ? " medição" : " medições")
-        : formatDate(point.timestamp) + ": " + point.value + " mg/dL";
-      return '<circle class="trend-dot ' + classify(point.value) + '" cx="' + xFor(index).toFixed(1) + '" cy="' + yFor(point.value).toFixed(1) + '" r="4.5"><title>' + escapeHtml(detail) + '</title></circle>';
+    var dots = points.map(function (point, index) {
+      return '<circle class="trend-dot ' + classify(point.value) + '" cx="' + xFor(index).toFixed(1) + '" cy="' + yFor(point.value).toFixed(1) + '" r="4.5"><title>' + point.value + ' mg/dL</title></circle>';
     }).join("");
-    var firstDate = labelFor(points[0]);
-    var lastDate = labelFor(points[points.length - 1]);
-    var chartDescription = byDay
-      ? "Tendência da média diária de " + points.length + " dias com medições, entre " + firstDate + " e " + lastDate + "."
-      : "Tendência de " + points.length + " medições registradas entre " + firstDate + " e " + lastDate + ".";
+    var firstDate = formatDate(points[0].timestamp);
+    var lastDate = formatDate(points[points.length - 1].timestamp);
+    var chartDescription = "Tendência de " + points.length + " medições registradas entre " + firstDate + " e " + lastDate + ".";
 
     chart.innerHTML = '<title id="trend-chart-title">Tendência de glicose</title><desc id="trend-chart-description">' + escapeHtml(chartDescription) + '</desc>' +
       '<rect class="trend-range-band" x="' + left + '" y="' + rangeTop.toFixed(1) + '" width="' + plotWidth + '" height="' + (rangeBottom - rangeTop).toFixed(1) + '"></rect>' +
@@ -678,10 +670,7 @@
       '<text class="trend-axis" x="' + left + '" y="' + (height - 10) + '">' + escapeHtml(firstDate) + '</text>' +
       '<text class="trend-axis" x="' + (width - right) + '" y="' + (height - 10) + '" text-anchor="end">' + escapeHtml(lastDate) + '</text>';
     empty.hidden = true;
-    summary.textContent = (byDay
-      ? "Exibe a média diária de " + points.length + " dias com medições em " + periodLabel().toLowerCase() + "."
-      : "Exibe " + points.length + " medições salvas em " + periodLabel().toLowerCase() + ".") +
-      " A área destacada representa a faixa pessoal do painel: 80–190 mg/dL. O gráfico usa medições registradas e não prevê resultados futuros.";
+    summary.textContent = "Exibe " + points.length + " medições salvas. A área destacada representa a faixa pessoal do painel: 80–190 mg/dL.";
   }
 
   function renderMedicalOrientation() {
@@ -1040,14 +1029,11 @@
       ? "Mostra a constância do registro"
       : readings.length + " em " + days + (days === 1 ? " dia" : " dias");
 
-    var meals = mealsInPeriod(range);
-    var carbsPerDay = days && meals.length ? carbsIn(meals) / days : null;
-    document.getElementById("insight-carbs").textContent = carbsPerDay === null
-      ? "—"
-      : "≈ " + formatGrams(Math.round(carbsPerDay));
-    document.getElementById("insight-carbs-detail").textContent = meals.length
-      ? meals.length + (meals.length === 1 ? " refeição no período" : " refeições no período")
-      : "Nenhuma refeição salva no período";
+    var mealsToday = state.meals.filter(function (meal) { return isToday(meal.recordedAt); }).length;
+    document.getElementById("insight-carbs").textContent = mealsToday ? "≈ " + formatGrams(carbsToday()) : "—";
+    document.getElementById("insight-carbs-detail").textContent = mealsToday
+      ? mealsToday + (mealsToday === 1 ? " refeição salva hoje" : " refeições salvas hoje")
+      : "Nenhuma refeição salva hoje";
   }
 
   function renderDashboard() {

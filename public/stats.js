@@ -1,5 +1,5 @@
-// Contas do painel de acompanhamento: recorte por período, médias diárias e
-// comparação com o período anterior. Nenhum cálculo de dose acontece aqui.
+// Contas do painel de acompanhamento: recorte por período e comparação com o
+// período anterior. Nenhum cálculo de dose acontece aqui.
 // Roda no navegador e no Node, para poder ser testado sem tela.
 (function (root) {
   "use strict";
@@ -94,59 +94,6 @@
     return Math.max(1, Math.round((end - start) / DAY) || 1);
   }
 
-  // Média por dia, do dia mais antigo para o mais novo.
-  function dailyAverages(readings) {
-    var days = new Map();
-    (readings || []).forEach(function (reading) {
-      var key = dayKey(reading && reading.timestamp);
-      var value = Number(reading && reading.value);
-      if (!key || !Number.isFinite(value)) return;
-      if (!days.has(key)) days.set(key, []);
-      days.get(key).push(value);
-    });
-
-    return Array.from(days.keys()).sort().map(function (key) {
-      var values = days.get(key);
-      return { day: key, value: Math.round(average(values)), count: values.length };
-    });
-  }
-
-  // Poucas leituras: cada uma vira um ponto. Muitas, espalhadas por vários dias:
-  // uma média por dia, que é o que mostra andamento sem virar um borrão de pontos.
-  function trendSeries(readings, maxPoints) {
-    var limit = Number.isFinite(maxPoints) && maxPoints > 0 ? maxPoints : 14;
-    var ordered = (readings || []).slice().sort(function (a, b) {
-      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-    });
-    var daily = dailyAverages(ordered);
-
-    if (ordered.length <= limit || daily.length < 3) {
-      return {
-        mode: "leituras",
-        points: ordered.map(function (reading) {
-          return {
-            value: Number(reading.value),
-            timestamp: reading.timestamp,
-            count: 1,
-            daily: false
-          };
-        })
-      };
-    }
-
-    return {
-      mode: "dias",
-      points: daily.map(function (day) {
-        return {
-          value: day.value,
-          timestamp: day.day + "T12:00",
-          count: day.count,
-          daily: true
-        };
-      })
-    };
-  }
-
   root.DiaryStats = {
     dayKey: dayKey,
     startOfDay: startOfDay,
@@ -155,8 +102,6 @@
     previousBounds: previousBounds,
     filterByRange: filterByRange,
     average: average,
-    daySpan: daySpan,
-    dailyAverages: dailyAverages,
-    trendSeries: trendSeries
+    daySpan: daySpan
   };
 }(typeof globalThis !== "undefined" ? globalThis : this));
