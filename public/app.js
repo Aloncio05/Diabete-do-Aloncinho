@@ -144,8 +144,29 @@
       readings: [],
       meals: [],
       medicalOrientation: { text: "", updatedAt: "" },
-      parameters: { rows: [], note: "" }
+      parameters: { rows: [], note: "" },
+      favorites: []
     };
+  }
+
+  // Guarda o NOME da medida, não o índice: a tabela de alimentos pode mudar.
+  function normalizeFavorites(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter(function (item) {
+        return item && typeof item.food === "string" && typeof item.measure === "string" &&
+          Number.isFinite(Number(item.quantity)) && Number(item.quantity) > 0;
+      })
+      .map(function (item) {
+        return {
+          food: item.food.slice(0, 120),
+          measure: item.measure.slice(0, 60),
+          quantity: Number(item.quantity),
+          uses: Number.isFinite(Number(item.uses)) && Number(item.uses) > 0 ? Math.floor(Number(item.uses)) : 1
+        };
+      })
+      .sort(function (a, b) { return b.uses - a.uses; })
+      .slice(0, 12);
   }
 
   function normalizeParameters(value) {
@@ -178,7 +199,8 @@
             updatedAt: typeof parsed.medicalOrientation.updatedAt === "string" ? parsed.medicalOrientation.updatedAt : ""
           }
           : { text: "", updatedAt: "" },
-        parameters: normalizeParameters(parsed.parameters)
+        parameters: normalizeParameters(parsed.parameters),
+        favorites: normalizeFavorites(parsed.favorites)
       };
     } catch (error) {
       return blankState();
@@ -830,6 +852,18 @@
     }).join("");
   }
 
+  function printableParameterRows() {
+    var parameters = state.parameters || { rows: [], note: "" };
+    if (!parameters.rows.length) return '<p class="meta">Nenhuma tabela de referência cadastrada.</p>';
+    return '<table><thead><tr><th>Faixa de horário</th><th>Fator de correção</th><th>Relação carboidrato/insulina</th></tr></thead><tbody>' +
+      parameters.rows.map(function (row, index) {
+        return "<tr><td>" + escapeHtml(bandLabel(parameters.rows, index)) + "</td><td>" +
+          (row.correction ? escapeHtml(row.correction) + " mg/dL" : "—") + "</td><td>" +
+          (row.ratio ? escapeHtml(row.ratio) + " g/U" : "—") + "</td></tr>";
+      }).join("") + "</tbody></table>" +
+      (parameters.note ? '<p class="meta">' + escapeHtml(parameters.note) + "</p>" : "");
+  }
+
   function openPdfReport() {
     var reportWindow = window.open("", "_blank");
     if (!reportWindow) {
@@ -845,6 +879,7 @@
       '<h2>Resumo da faixa pessoal do dashboard</h2><div class="metrics"><div class="metric"><span>Faixa</span><strong>80–190</strong><small>mg/dL</small></div><div class="metric"><span>Medições na faixa</span><strong>' + (summary.validReadingCount ? Math.round(summary.inRangeReadingCount / summary.validReadingCount * 100) + "%" : "—") + '</strong><small>' + summary.inRangeReadingCount + " de " + summary.validReadingCount + ' leituras</small></div><div class="metric"><span>Refeições</span><strong>' + summary.mealCount + '</strong><small>salvas no diário</small></div></div>' +
       '<h2>Medições de glicose</h2><table><thead><tr><th>Data e hora</th><th>Valor</th><th>Faixa</th><th>Observação</th></tr></thead><tbody>' + printableReadingRows() + '</tbody></table>' +
       '<h2>Carboidratos registrados</h2><table><thead><tr><th>Data e hora</th><th>Refeição</th><th>Itens e faixa estimada</th><th>Observação</th></tr></thead><tbody>' + printableMealRows() + '</tbody></table>' +
+      '<h2>Parâmetros de referência</h2><p class="meta">Valores transcritos pelo paciente e apenas exibidos pelo aplicativo. Nenhum cálculo de dose é realizado a partir deles.</p>' + printableParameterRows() +
       '<p class="meta no-print">Use “Salvar como PDF” na janela de impressão para baixar este relatório.</p></body></html>';
     reportWindow.opener = null;
     reportWindow.document.open();
@@ -995,6 +1030,7 @@
     renderMeals();
     renderMedicalOrientation();
     renderParameters();
+    renderFavorites();
   }
 
   function selectPeriod(days) {
@@ -1023,6 +1059,67 @@
       quantity: quantity,
       grams: Math.round(measure[1] * quantity * 10) / 10
     };
+  }
+
+  // Um item da tabela vira item pendente. Usado pelo formulário e pelos favoritos.
+  function addFoodItem(food, measure, quantity) {
+    var grams = Math.round(measure[1] * quantity * 10) / 10;
+    var quantityText = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(quantity);
+    var label = quantity === 1
+      ? food.name + " (" + measure[0] + ")"
+      : food.name + " (" + quantityText + " × " + measure[0] + ")";
+
+    pendingItems.push({
+      id: entryId("item"),
+      name: label.slice(0, 80),
+      min: grams,
+      max: grams,
+      source: "tabela"
+    });
+    renderPendingItems();
+    return grams;
+  }
+
+  function registerFavorite(foodName, measureName, quantity) {
+    var existing = state.favorites.find(function (item) {
+      return item.food === foodName && item.measure === measureName && item.quantity === quantity;
+    });
+    if (existing) {
+      existing.uses += 1;
+    } else {
+      state.favorites.push({ food: foodName, measure: measureName, quantity: quantity, uses: 1 });
+    }
+    state.favorites = normalizeFavorites(state.favorites);
+    saveState();
+    renderFavorites();
+  }
+
+  // Resolve o favorito na tabela atual; some sozinho se o alimento ou a medida sumir.
+  function resolveFavorite(favorite) {
+    var food = foods.find(function (item) { return item.name === favorite.food; });
+    if (!food) return null;
+    var measure = food.measures.find(function (item) { return item[0] === favorite.measure; });
+    return measure ? { food: food, measure: measure } : null;
+  }
+
+  function renderFavorites() {
+    var target = document.getElementById("food-favorites");
+    var chips = state.favorites.map(function (favorite, index) {
+      var resolved = resolveFavorite(favorite);
+      if (!resolved) return "";
+      var grams = Math.round(resolved.measure[1] * favorite.quantity * 10) / 10;
+      var quantityText = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(favorite.quantity);
+      return '<span class="food-chip">' +
+        '<button type="button" data-favorite="' + index + '">' +
+        escapeHtml(favorite.food) + ' <small>' + quantityText + ' × ' + escapeHtml(favorite.measure) +
+        ' · ' + formatGrams(grams) + '</small></button>' +
+        '<button class="chip-remove" type="button" data-remove-favorite="' + index + '" title="Tirar dos frequentes" aria-label="Tirar ' + escapeHtml(favorite.food) + ' dos frequentes">×</button>' +
+        '</span>';
+    }).filter(Boolean).slice(0, 6).join("");
+
+    target.innerHTML = chips
+      ? '<p class="eyebrow">Você repete bastante</p><div class="food-chips">' + chips + '</div>'
+      : "";
   }
 
   function renderFoodPicker() {
@@ -1163,25 +1260,37 @@
       return;
     }
 
-    var quantityText = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(selection.quantity);
-    var label = selection.quantity === 1
-      ? selection.food.name + " (" + selection.measure[0] + ")"
-      : selection.food.name + " (" + quantityText + " × " + selection.measure[0] + ")";
-
-    pendingItems.push({
-      id: entryId("item"),
-      name: label.slice(0, 80),
-      min: selection.grams,
-      max: selection.grams,
-      source: "tabela"
-    });
+    addFoodItem(selection.food, selection.measure, selection.quantity);
+    registerFavorite(selection.food.name, selection.measure[0], selection.quantity);
 
     foodSearch.value = "";
     foodQuantity.value = "1";
     renderFoodPicker();
-    renderPendingItems();
     showToast(selection.food.name + " adicionado à refeição.");
     foodSearch.focus();
+  });
+
+  document.getElementById("food-favorites").addEventListener("click", function (event) {
+    var removeIndex = event.target.dataset.removeFavorite;
+    if (typeof removeIndex !== "undefined") {
+      state.favorites.splice(Number(removeIndex), 1);
+      saveState();
+      renderFavorites();
+      return;
+    }
+
+    var index = event.target.dataset.favorite;
+    if (typeof index === "undefined") return;
+    var favorite = state.favorites[Number(index)];
+    var resolved = favorite && resolveFavorite(favorite);
+    if (!resolved) return;
+
+    addFoodItem(resolved.food, resolved.measure, favorite.quantity);
+    favorite.uses += 1;
+    state.favorites = normalizeFavorites(state.favorites);
+    saveState();
+    renderFavorites();
+    showToast(favorite.food + " adicionado à refeição.");
   });
 
   [foodSearch, foodMeasure, foodQuantity].forEach(function (field) {

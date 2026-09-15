@@ -921,6 +921,43 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
 
 .food-search-field { grid-column: 1 / -1; }
 
+/* Frequentes: um toque repete a porção exata, sem digitar nada. */
+.food-favorites:empty { display: none; }
+.food-favorites .eyebrow { margin-bottom: 9px; }
+.food-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.food-chip {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--in-range-line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.food-chip > button {
+  border: 0;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: left;
+  transition: background 140ms ease;
+}
+
+.food-chip > button:hover { background: var(--in-range-bg); }
+.food-chip small { display: block; margin-top: 2px; color: var(--ink-muted); font-size: 0.7rem; font-weight: 600; }
+
+.food-chip .chip-remove {
+  padding: 0 10px;
+  border-left: 1px solid var(--line-soft);
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
+.food-chip .chip-remove:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
 .food-result {
   display: flex;
   align-items: baseline;
