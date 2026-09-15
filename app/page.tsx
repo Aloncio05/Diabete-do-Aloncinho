@@ -1,13 +1,25 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, useMemo, useState } from "react";
 import {
-  BASAL,
   calcularBolus,
   formatarUnidades,
   obterFaixaBolus,
-  type ResultadoBolus,
 } from "@/lib/insulin-calculator";
+
+type EstimateItem = {
+  name: string;
+  portion: string;
+  min_g: number;
+  max_g: number;
+};
+
+type Estimate = {
+  items: EstimateItem[];
+  total_min_g: number;
+  total_max_g: number;
+  observation?: string;
+};
 
 function horaAtual() {
   const agora = new Date();
@@ -16,14 +28,30 @@ function horaAtual() {
   ).padStart(2, "0")}`;
 }
 
+function paraNumero(valor: string) {
+  return Number(valor.replace(",", "."));
+}
+
+async function arquivoParaDataUrl(file: File) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const [horario, setHorario] = useState(horaAtual);
-  const [carboidratos, setCarboidratos] = useState("");
   const [glicemiaAtual, setGlicemiaAtual] = useState("");
-  const [glicemiaAlvo, setGlicemiaAlvo] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [porcao, setPorcao] = useState("");
+  const [foto, setFoto] = useState<File | null>(null);
+  const [estimate, setEstimate] = useState<Estimate | null>(null);
+  const [carboidratos, setCarboidratos] = useState("");
   const [insulinaAtiva, setInsulinaAtiva] = useState("0");
-  const [resultado, setResultado] = useState<ResultadoBolus | null>(null);
   const [erro, setErro] = useState("");
+  const [carregando, setCarregando] = useState(false);
 
   const faixaAtual = useMemo(() => {
     try {
@@ -33,250 +61,272 @@ export default function Home() {
     }
   }, [horario]);
 
-  function calcular(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setErro("");
-    setResultado(null);
+  const resultado = useMemo(() => {
+    if (!glicemiaAtual || !carboidratos || !faixaAtual) return null;
 
     try {
-      const resultadoCalculado = calcularBolus({
-        carboidratos: Number(carboidratos.replace(",", ".")),
-        glicemiaAtual: Number(glicemiaAtual.replace(",", ".")),
-        glicemiaAlvo: Number(glicemiaAlvo.replace(",", ".")),
+      return calcularBolus({
+        carboidratos: paraNumero(carboidratos),
+        glicemiaAtual: paraNumero(glicemiaAtual),
+        glicemiaAlvo: 100,
         horario,
-        insulinaAtiva: Number(insulinaAtiva.replace(",", ".")),
+        insulinaAtiva: paraNumero(insulinaAtiva || "0"),
+      });
+    } catch {
+      return null;
+    }
+  }, [glicemiaAtual, carboidratos, horario, insulinaAtiva, faixaAtual]);
+
+  async function analisarRefeicao() {
+    setErro("");
+    setEstimate(null);
+
+    if (!glicemiaAtual) {
+      setErro("Informe a glicemia atual.");
+      return;
+    }
+
+    if (!descricao.trim() && !foto) {
+      setErro("Descreva a refeição ou envie uma foto.");
+      return;
+    }
+
+    setCarregando(true);
+
+    try {
+      const imageDataUrl = foto ? await arquivoParaDataUrl(foto) : null;
+
+      const response = await fetch("/api/estimate-carbs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: descricao,
+          portion: porcao,
+          imageDataUrl,
+        }),
       });
 
-      setResultado(resultadoCalculado);
+      const body = await response.json();
+
+      if (!response.ok) {
+        throw new Error(body?.error || "Não foi possível analisar a refeição.");
+      }
+
+      const estimativa = body.estimate as Estimate;
+      setEstimate(estimativa);
+
+      const medio =
+        (Number(estimativa.total_min_g) + Number(estimativa.total_max_g)) / 2;
+
+      setCarboidratos(medio.toFixed(1).replace(".", ","));
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Erro ao calcular.");
+      setErro(
+        error instanceof Error ? error.message : "Falha ao analisar a refeição.",
+      );
+    } finally {
+      setCarregando(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-4 py-8 text-zinc-950 sm:px-6">
-      <div className="mx-auto max-w-4xl">
-        <header className="mb-8">
-          <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">
+    <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
+      <div className="mx-auto max-w-4xl space-y-6">
+        <header>
+          <p className="text-sm font-bold uppercase tracking-wider text-emerald-400">
             Diabetes do Aloncinho
           </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            Calculadora de carboidratos e bolus
+          <h1 className="mt-2 text-3xl font-bold">
+            Glicemia + refeição + IA
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">
-            Calcula uma estimativa matemática usando os parâmetros cadastrados.
-            Não altera sua prescrição e não substitui orientação médica.
+          <p className="mt-2 text-sm text-slate-400">
+            A IA estima os carboidratos da refeição. Os parâmetros do horário
+            são aplicados automaticamente.
           </p>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
-            <form onSubmit={calcular} className="space-y-5">
-              <div>
-                <label className="mb-2 block text-sm font-medium" htmlFor="horario">
-                  Horário
-                </label>
-                <input
-                  id="horario"
-                  type="time"
-                  value={horario}
-                  onChange={(e) => setHorario(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                />
-              </div>
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <h2 className="text-lg font-semibold">1. Glicemia e horário</h2>
 
-              {faixaAtual && (
-                <div className="rounded-xl bg-zinc-100 p-4 text-sm">
-                  <p className="font-semibold">Parâmetros deste horário</p>
-                  <div className="mt-2 grid gap-1 text-zinc-700">
-                    <span>
-                      Faixa: {faixaAtual.inicio}–{faixaAtual.fim}
-                    </span>
-                    <span>
-                      Relação carbo/insulina:{" "}
-                      {faixaAtual.carboPorUnidade == null
-                        ? "pendente"
-                        : `${faixaAtual.carboPorUnidade} g/U`}
-                    </span>
-                    <span>
-                      Sensibilidade: {faixaAtual.sensibilidade} mg/dL por U
-                    </span>
-                  </div>
-                </div>
-              )}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium">Horário</label>
+              <input
+                type="time"
+                value={horario}
+                onChange={(e) => setHorario(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label
-                    className="mb-2 block text-sm font-medium"
-                    htmlFor="carboidratos"
-                  >
-                    Carboidratos (g)
-                  </label>
-                  <input
-                    id="carboidratos"
-                    inputMode="decimal"
-                    value={carboidratos}
-                    onChange={(e) => setCarboidratos(e.target.value)}
-                    placeholder="Ex.: 60"
-                    required
-                    className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Glicemia atual (mg/dL)
+              </label>
+              <input
+                inputMode="decimal"
+                value={glicemiaAtual}
+                onChange={(e) => setGlicemiaAtual(e.target.value)}
+                placeholder="Ex.: 145"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
+          </div>
 
-                <div>
-                  <label
-                    className="mb-2 block text-sm font-medium"
-                    htmlFor="glicemia"
-                  >
-                    Glicemia atual (mg/dL)
-                  </label>
-                  <input
-                    id="glicemia"
-                    inputMode="decimal"
-                    value={glicemiaAtual}
-                    onChange={(e) => setGlicemiaAtual(e.target.value)}
-                    placeholder="Ex.: 180"
-                    required
-                    className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
+          {faixaAtual && (
+            <div className="mt-4 rounded-xl bg-slate-800 p-4 text-sm text-slate-300">
+              <strong>Automático:</strong>{" "}
+              {faixaAtual.inicio}–{faixaAtual.fim} ·{" "}
+              {faixaAtual.carboPorUnidade} g/U · sensibilidade{" "}
+              {faixaAtual.sensibilidade} mg/dL/U · alvo pré-refeição 100 mg/dL
+            </div>
+          )}
+        </section>
 
-                <div>
-                  <label
-                    className="mb-2 block text-sm font-medium"
-                    htmlFor="alvo"
-                  >
-                    Glicemia alvo (mg/dL)
-                  </label>
-                  <input
-                    id="alvo"
-                    inputMode="decimal"
-                    value={glicemiaAlvo}
-                    onChange={(e) => setGlicemiaAlvo(e.target.value)}
-                    placeholder="Informe sua meta prescrita"
-                    required
-                    className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <h2 className="text-lg font-semibold">2. Refeição</h2>
 
-                <div>
-                  <label
-                    className="mb-2 block text-sm font-medium"
-                    htmlFor="ativa"
-                  >
-                    Insulina ativa (U)
-                  </label>
-                  <input
-                    id="ativa"
-                    inputMode="decimal"
-                    value={insulinaAtiva}
-                    onChange={(e) => setInsulinaAtiva(e.target.value)}
-                    placeholder="0"
-                    required
-                    className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-              </div>
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Descrição da refeição
+              </label>
+              <textarea
+                rows={3}
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                placeholder="Ex.: arroz, feijão, frango e salada"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
 
-              {erro && (
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Porção aproximada
+              </label>
+              <input
+                value={porcao}
+                onChange={(e) => setPorcao(e.target.value)}
+                placeholder="Ex.: 3 colheres de arroz, 1 concha de feijão"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Foto da refeição
+              </label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setFoto(e.target.files?.[0] || null)
+                }
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={analisarRefeicao}
+              disabled={carregando}
+              className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {carregando ? "Analisando refeição..." : "Analisar refeição com IA"}
+            </button>
+          </div>
+
+          {erro && (
+            <div className="mt-4 rounded-xl border border-red-800 bg-red-950/60 p-4 text-sm text-red-200">
+              {erro}
+            </div>
+          )}
+        </section>
+
+        {estimate && (
+          <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="text-lg font-semibold">3. Carboidratos estimados</h2>
+
+            <div className="mt-4 space-y-3">
+              {estimate.items.map((item, index) => (
                 <div
-                  role="alert"
-                  className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+                  key={`${item.name}-${index}`}
+                  className="rounded-xl bg-slate-800 p-4"
                 >
-                  {erro}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-              >
-                Calcular estimativa
-              </button>
-            </form>
-
-            {resultado && (
-              <div className="mt-6 border-t border-zinc-200 pt-6">
-                <h2 className="text-lg font-semibold">Resultado matemático</h2>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl bg-zinc-100 p-4">
-                    <p className="text-xs uppercase tracking-wide text-zinc-500">
-                      Alimentação
-                    </p>
-                    <p className="mt-1 text-xl font-bold">
-                      {formatarUnidades(resultado.doseAlimentar)} U
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl bg-zinc-100 p-4">
-                    <p className="text-xs uppercase tracking-wide text-zinc-500">
-                      Correção
-                    </p>
-                    <p className="mt-1 text-xl font-bold">
-                      {formatarUnidades(resultado.doseCorrecao)} U
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-xs uppercase tracking-wide text-emerald-700">
-                      Total calculado
-                    </p>
-                    <p className="mt-1 text-2xl font-bold text-emerald-900">
-                      {formatarUnidades(resultado.doseMatematica)} U
-                    </p>
+                  <div className="font-semibold">{item.name}</div>
+                  <div className="mt-1 text-sm text-slate-400">{item.portion}</div>
+                  <div className="mt-2 text-sm">
+                    {item.min_g}–{item.max_g} g de carboidratos
                   </div>
                 </div>
+              ))}
+            </div>
 
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  Este valor é uma estimativa matemática, não uma ordem para
-                  aplicação. Confirme com seu plano prescrito antes de usar.
-                </div>
-
-                {resultado.avisos.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {resultado.avisos.map((aviso) => (
-                      <p
-                        key={aviso}
-                        className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-                      >
-                        {aviso}
-                      </p>
-                    ))}
-                  </div>
-                )}
+            <div className="mt-4 rounded-xl border border-emerald-800 bg-emerald-950/40 p-4">
+              <div className="text-sm text-emerald-300">Total estimado pela IA</div>
+              <div className="mt-1 text-2xl font-bold">
+                {estimate.total_min_g}–{estimate.total_max_g} g
               </div>
-            )}
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium">
+                Carboidratos usados no cálculo
+              </label>
+              <input
+                inputMode="decimal"
+                value={carboidratos}
+                onChange={(e) => setCarboidratos(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium">
+                Insulina rápida ainda ativa (U)
+              </label>
+              <input
+                inputMode="decimal"
+                value={insulinaAtiva}
+                onChange={(e) => setInsulinaAtiva(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+            </div>
           </section>
+        )}
 
-          <aside className="space-y-4">
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-              <h2 className="font-semibold">Basal atual</h2>
-              <div className="mt-3 space-y-2 text-sm">
-                {BASAL.map((item) => (
-                  <div
-                    key={item.horario}
-                    className="flex items-center justify-between rounded-lg bg-zinc-100 px-3 py-2"
-                  >
-                    <span>{item.horario}</span>
-                    <strong>{item.unidades} U Basaglar</strong>
-                  </div>
-                ))}
-              </div>
-            </section>
+        {resultado && (
+          <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="text-lg font-semibold">4. Resultado matemático</h2>
 
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-              <h2 className="font-semibold">Fórmula</h2>
-              <div className="mt-3 space-y-3 text-sm leading-6 text-zinc-700">
-                <p>Alimentação = carboidratos ÷ relação</p>
-                <p>Correção = (glicemia − alvo) ÷ sensibilidade</p>
-                <p>Total = alimentação + correção − insulina ativa</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl bg-slate-800 p-4">
+                <div className="text-xs text-slate-400">Alimentação</div>
+                <div className="mt-1 text-xl font-bold">
+                  {formatarUnidades(resultado.doseAlimentar)} U
+                </div>
               </div>
-            </section>
-          </aside>
-        </div>
+
+              <div className="rounded-xl bg-slate-800 p-4">
+                <div className="text-xs text-slate-400">Correção</div>
+                <div className="mt-1 text-xl font-bold">
+                  {formatarUnidades(resultado.doseCorrecao)} U
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-800 bg-emerald-950/40 p-4">
+                <div className="text-xs text-emerald-300">Total matemático</div>
+                <div className="mt-1 text-2xl font-bold">
+                  {formatarUnidades(resultado.doseMatematica)} U
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl bg-amber-950/40 p-4 text-sm text-amber-200">
+              Este resultado apenas reproduz matematicamente os parâmetros
+              cadastrados. Confirme com o plano prescrito antes de qualquer aplicação.
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );
