@@ -20,8 +20,14 @@ Painel pessoal de glicose e refeições, pensado para uso em um único navegador
 - Permite estimar uma faixa de carboidratos por descrição, porção e foto opcional, tirada na hora pela câmera ou escolhida da galeria. A estimativa precisa de confirmação antes de entrar no diário.
 - Envia descrição/foto à IA somente após consentimento explícito no momento da solicitação; não envia medições, histórico ou orientação médica.
 - Guarda um texto de orientação médica digitado pela própria pessoa apenas como referência visual, sem interpretar ou usar o conteúdo em cálculos.
+- Baixa um backup `.json` com o diário inteiro — medições, refeições com todos os itens e faixas, refeições padrão, favoritos, parâmetros e orientação — e restaura esse arquivo em outro navegador. É o único caminho que preserva tudo.
+- Importa exportações de outros apps (Glic e similares) em `.csv`, ignorando o que já está no diário. A planilha CSV do próprio app serve para ler e compartilhar, não para restaurar: ela achata a faixa de carboidratos e junta os itens de uma refeição numa linha por item.
 - Exporta glicemia e carboidratos em planilha CSV e abre um relatório local pronto para salvar em PDF.
 - Mantém os registros no armazenamento local do navegador, com exclusão a qualquer momento.
+
+Restaurar um backup **substitui** o que está salvo no navegador. A tela mostra o
+que vem no arquivo ao lado do que já existe antes de confirmar. O arquivo de
+backup sai do dispositivo com tudo, inclusive o texto da orientação médica.
 
 ## Limite importante
 
@@ -53,6 +59,7 @@ Checagens, sem rede e sem chave:
 node scripts/test-estimate-carbs.mjs
 node scripts/test-csv.mjs
 node scripts/test-dashboard.mjs
+node scripts/test-backup.mjs
 ```
 
 ## Dados

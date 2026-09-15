@@ -14,20 +14,16 @@
   var toastTimer = 0;
   var webMcpController = null;
 
-  var mealLabels = {
-    cafe: "Café",
-    almoco: "Almoço",
-    lanche: "Lanche",
-    jantar: "Jantar"
-  };
-
-  var sourceLabels = {
-    descricao: "Descrição",
-    rotulo: "Rótulo",
-    foto: "Foto local",
-    ia: "Estimativa por IA",
-    tabela: "Tabela de alimentos"
-  };
+  // A forma dos dados e as regras de conferência vivem em state.js, para o
+  // localStorage e o arquivo de backup entrarem pelo mesmo caminho.
+  var diaryState = window.DiaryState;
+  var mealLabels = diaryState.mealLabels;
+  var sourceLabels = diaryState.sourceLabels;
+  var entryId = diaryState.entryId;
+  var blankState = diaryState.blankState;
+  var normalizeFavorites = diaryState.normalizeFavorites;
+  var normalizeParameters = diaryState.normalizeParameters;
+  var normalizeTemplates = diaryState.normalizeTemplates;
 
   // Carboidratos (g) por medida caseira — valores de referência de contagem.
   // Porções variam; o rótulo do produto, quando existe, é sempre mais exato.
@@ -149,117 +145,9 @@
   var dataDialog = document.getElementById("data-dialog");
   var assistantToolsConsent = document.getElementById("assistant-tools-consent");
 
-  function blankState() {
-    return {
-      readings: [],
-      meals: [],
-      medicalOrientation: { text: "", updatedAt: "" },
-      parameters: { rows: [], note: "" },
-      favorites: [],
-      templates: []
-    };
-  }
-
-  // Refeição padrão: uma combinação de itens guardada com nome, mais o histórico
-  // de uso (quantas vezes e quando foi a última). Nada daqui entra no diário
-  // sozinho: continua passando pelo "Salvar refeição".
-  function normalizeTemplates(value) {
-    if (!Array.isArray(value)) return [];
-    return value
-      .filter(function (template) {
-        return template && typeof template.name === "string" && template.name.trim() &&
-          Array.isArray(template.items) && template.items.length;
-      })
-      .map(function (template) {
-        var uses = Number(template.uses);
-        return {
-          id: typeof template.id === "string" && template.id ? template.id : entryId("padrao"),
-          name: template.name.trim().slice(0, 80),
-          category: Object.prototype.hasOwnProperty.call(mealLabels, template.category)
-            ? template.category
-            : "cafe",
-          createdAt: typeof template.createdAt === "string" ? template.createdAt : "",
-          lastUsedAt: typeof template.lastUsedAt === "string" ? template.lastUsedAt : "",
-          uses: Number.isFinite(uses) && uses > 0 ? Math.floor(uses) : 0,
-          items: template.items
-            .filter(function (item) {
-              return item && typeof item.name === "string" && item.name.trim() &&
-                Number.isFinite(Number(item.min)) && Number.isFinite(Number(item.max)) &&
-                Number(item.min) >= 0 && Number(item.max) >= Number(item.min);
-            })
-            .slice(0, 20)
-            .map(function (item) {
-              return {
-                name: item.name.trim().slice(0, 80),
-                min: Number(item.min),
-                max: Number(item.max),
-                source: Object.prototype.hasOwnProperty.call(sourceLabels, item.source)
-                  ? item.source
-                  : "descricao"
-              };
-            })
-        };
-      })
-      .filter(function (template) { return template.items.length; })
-      .slice(0, 24);
-  }
-
-  // Guarda o NOME da medida, não o índice: a tabela de alimentos pode mudar.
-  function normalizeFavorites(value) {
-    if (!Array.isArray(value)) return [];
-    return value
-      .filter(function (item) {
-        return item && typeof item.food === "string" && typeof item.measure === "string" &&
-          Number.isFinite(Number(item.quantity)) && Number(item.quantity) > 0;
-      })
-      .map(function (item) {
-        return {
-          food: item.food.slice(0, 120),
-          measure: item.measure.slice(0, 60),
-          quantity: Number(item.quantity),
-          uses: Number.isFinite(Number(item.uses)) && Number(item.uses) > 0 ? Math.floor(Number(item.uses)) : 1
-        };
-      })
-      .sort(function (a, b) { return b.uses - a.uses; })
-      .slice(0, 12);
-  }
-
-  function normalizeParameters(value) {
-    var rows = value && Array.isArray(value.rows) ? value.rows : [];
-    return {
-      rows: rows.slice(0, 12).map(function (row) {
-        var start = Number(row && row.start);
-        return {
-          start: Number.isInteger(start) && start >= 0 && start <= 23 ? start : 0,
-          correction: typeof row.correction === "string" ? row.correction.slice(0, 12) : "",
-          ratio: typeof row.ratio === "string" ? row.ratio.slice(0, 12) : ""
-        };
-      }).sort(function (a, b) { return a.start - b.start; }),
-      bolus: value && typeof value.bolus === "string" ? value.bolus.slice(0, 80) : "",
-      basal: value && typeof value.basal === "string" ? value.basal.slice(0, 200) : "",
-      note: value && typeof value.note === "string" ? value.note.slice(0, 200) : ""
-    };
-  }
-
   function loadState() {
     try {
-      var parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (!parsed || !Array.isArray(parsed.readings) || !Array.isArray(parsed.meals)) {
-        return blankState();
-      }
-      return {
-        readings: parsed.readings,
-        meals: parsed.meals,
-        medicalOrientation: parsed.medicalOrientation && typeof parsed.medicalOrientation.text === "string"
-          ? {
-            text: parsed.medicalOrientation.text.slice(0, 2000),
-            updatedAt: typeof parsed.medicalOrientation.updatedAt === "string" ? parsed.medicalOrientation.updatedAt : ""
-          }
-          : { text: "", updatedAt: "" },
-        parameters: normalizeParameters(parsed.parameters),
-        favorites: normalizeFavorites(parsed.favorites),
-        templates: normalizeTemplates(parsed.templates)
-      };
+      return diaryState.normalizeState(JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"));
     } catch (error) {
       return blankState();
     }
@@ -267,13 +155,6 @@
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }
-
-  function entryId(prefix) {
-    if (window.crypto && window.crypto.randomUUID) {
-      return prefix + "-" + window.crypto.randomUUID();
-    }
-    return prefix + "-" + Date.now() + "-" + Math.random().toString(16).slice(2);
   }
 
   function classify(value) {
@@ -1902,6 +1783,89 @@
   document.getElementById("export-data").addEventListener("click", function () {
     exportDataAsCsv();
   });
+
+  document.getElementById("export-backup").addEventListener("click", function () {
+    downloadFile(
+      "backup-diario-aloncinho-" + new Date().toISOString().slice(0, 10) + ".json",
+      JSON.stringify(diaryState.makeBackup(state), null, 2),
+      "application/json"
+    );
+    showToast("Backup baixado. Guarde o arquivo em lugar seguro: ele tem seus dados de saúde.");
+  });
+
+  // Restaurar troca o diário inteiro pelo do arquivo. O diálogo mostra os dois
+  // lados antes, porque é a única forma de não apagar dado sem a pessoa ver.
+  var pendingRestore = null;
+  var restoreDialog = document.getElementById("restore-dialog");
+  var restoreFile = document.getElementById("restore-file");
+
+  function closeRestoreDialog() {
+    restoreDialog.close();
+    pendingRestore = null;
+    restoreFile.value = "";
+  }
+
+  function describeCounts(counts) {
+    return '<ul class="import-list">' +
+      "<li><strong>" + counts.readings + "</strong> medições</li>" +
+      "<li><strong>" + counts.meals + "</strong> refeições</li>" +
+      "<li><strong>" + counts.templates + "</strong> refeições padrão</li>" +
+      "<li><strong>" + counts.favorites + "</strong> alimentos frequentes</li>" +
+      "<li><strong>" + counts.parameterRows + "</strong> faixas de horário</li>" +
+      "<li>" + (counts.hasOrientation ? "com" : "sem") + " orientação médica salva</li>" +
+      "</ul>";
+  }
+
+  restoreFile.addEventListener("change", async function () {
+    var file = restoreFile.files && restoreFile.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      showToast("Arquivo muito grande. Envie um backup de até 20 MB.");
+      restoreFile.value = "";
+      return;
+    }
+
+    var result;
+    try {
+      result = diaryState.readBackup(await file.text());
+    } catch (error) {
+      result = { ok: false, error: "Não consegui ler esse arquivo." };
+    }
+
+    if (!result.ok) {
+      showToast(result.error);
+      restoreFile.value = "";
+      return;
+    }
+
+    pendingRestore = result;
+    var discarded = result.discarded.readings + result.discarded.meals;
+    document.getElementById("restore-summary").innerHTML =
+      '<p class="import-file-name">' + escapeHtml(file.name) + "</p>" +
+      (result.savedAt ? '<p class="restore-date">Backup de ' + escapeHtml(formatDate(result.savedAt)) + "</p>" : "") +
+      '<div class="restore-sides">' +
+      "<div><p class=\"eyebrow\">Vem do arquivo</p>" + describeCounts(result.counts) + "</div>" +
+      "<div><p class=\"eyebrow\">Está salvo agora</p>" + describeCounts(diaryState.counts(state)) + "</div>" +
+      "</div>" +
+      (discarded ? '<p class="import-warning">' + discarded + " registros do arquivo não passaram na conferência e ficam de fora.</p>" : "") +
+      '<p class="import-warning">Restaurar <strong>substitui</strong> o que está salvo neste navegador. Baixe um backup antes se quiser guardar o atual.</p>';
+    restoreDialog.showModal();
+  });
+
+  document.getElementById("confirm-restore").addEventListener("click", function () {
+    if (!pendingRestore) return;
+    var restored = pendingRestore.counts;
+    state = pendingRestore.state;
+    pendingItems = [];
+    saveState();
+    resetEstimateForm();
+    renderAll();
+    closeRestoreDialog();
+    showToast(restored.readings + " medições e " + restored.meals + " refeições restauradas.");
+  });
+
+  document.getElementById("cancel-restore").addEventListener("click", closeRestoreDialog);
+  document.getElementById("close-restore").addEventListener("click", closeRestoreDialog);
 
   document.getElementById("export-pdf").addEventListener("click", function () {
     openPdfReport();

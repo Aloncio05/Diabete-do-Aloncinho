@@ -14,6 +14,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/csv.js" defer></script>
+    <script src="/state.js" defer></script>
     <script src="/stats.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
@@ -573,9 +574,19 @@
       <footer class="app-footer">
         <div>
           <strong>Seus dados, no seu dispositivo.</strong>
-          <p>Exporte ou apague os registros quando quiser.</p>
+          <p>
+            O backup leva o diário inteiro para outro navegador. A planilha e o
+            relatório servem para ler e compartilhar.
+          </p>
         </div>
         <div class="footer-actions">
+          <label class="quiet-button import-button primary-action">
+            Restaurar backup (.json)
+            <input id="restore-file" type="file" accept=".json,application/json" />
+          </label>
+          <button id="export-backup" class="quiet-button primary-action" type="button">
+            Baixar backup (.json)
+          </button>
           <label class="quiet-button import-button">
             Importar do Glic (.csv)
             <input id="import-file" type="file" accept=".csv,text/csv,text/plain" />
@@ -596,6 +607,10 @@
         <li>Uma foto só é enviada para estimativa quando você autoriza e solicita esse processamento.</li>
         <li>O texto de orientação médica também fica guardado neste navegador.</li>
         <li>Você pode exportar ou apagar os dados locais a qualquer momento.</li>
+        <li>
+          O arquivo de backup sai do navegador com tudo o que está salvo, inclusive
+          o texto da orientação médica. Guarde-o como guardaria um exame.
+        </li>
       </ul>
       <label class="assistant-consent">
         <input id="assistant-tools-consent" type="checkbox" />
@@ -614,6 +629,17 @@
       <div class="import-actions">
         <button id="cancel-import" class="quiet-button" type="button">Cancelar</button>
         <button id="confirm-import" class="primary-button" type="button">Importar</button>
+      </div>
+    </dialog>
+
+    <dialog id="restore-dialog" class="data-dialog">
+      <button id="close-restore" class="dialog-close" type="button" aria-label="Fechar">×</button>
+      <p class="eyebrow">Restaurar backup</p>
+      <h2>Isto substitui o diário deste navegador</h2>
+      <div id="restore-summary" class="import-summary"></div>
+      <div class="import-actions">
+        <button id="cancel-restore" class="quiet-button" type="button">Cancelar</button>
+        <button id="confirm-restore" class="primary-button" type="button">Restaurar</button>
       </div>
     </dialog>
 

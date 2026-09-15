@@ -967,7 +967,37 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
 }
 
 .app-footer strong { font-size: 0.89rem; }
-.app-footer p { margin: 4px 0 0; color: var(--ink-muted); font-size: 0.76rem; }
+.app-footer p { margin: 4px 0 0; max-width: 420px; color: var(--ink-muted); font-size: 0.76rem; line-height: 1.45; }
+
+/* Backup e restauração levam o diário inteiro; o resto do rodapé são saídas
+   de leitura. A diferença de peso é o que evita a troca na hora de migrar. */
+.footer-actions .primary-action {
+  color: var(--teal-dark);
+  background: var(--teal-soft);
+  border-color: var(--teal-soft);
+}
+.footer-actions .primary-action:hover { background: color-mix(in srgb, var(--teal) 22%, var(--teal-soft)); }
+
+.restore-date { margin: 0 0 12px; color: var(--ink-muted); font-size: 0.78rem; }
+
+.restore-sides {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.restore-sides > div {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.restore-sides .eyebrow { margin-bottom: 8px; }
+.restore-sides .import-list { margin: 0; }
+
+/* Os dois lados da comparação não cabem na largura padrão do diálogo. */
+#restore-dialog { width: min(640px, calc(100% - 40px)); }
 
 .data-dialog {
   width: min(480px, calc(100% - 40px));
@@ -1457,6 +1487,7 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
   .photo-buttons .quiet-button { flex: 1; }
   .meal-templates { grid-template-columns: 1fr; }
   .clear-dates { width: 100%; }
+  .restore-sides { grid-template-columns: 1fr; }
   .footer-actions { width: 100%; justify-content: space-between; }
   .ai-estimate-heading,
   .estimate-actions,
