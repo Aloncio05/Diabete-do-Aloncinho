@@ -2,7 +2,6 @@
 
 import { ChangeEvent, useMemo, useState } from "react";
 import {
-  calcularBolus,
   formatarUnidades,
   obterFaixaBolus,
 } from "@/lib/insulin-calculator";
@@ -51,6 +50,9 @@ export default function Home() {
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [carboidratos, setCarboidratos] = useState("");
   const [insulinaAtiva, setInsulinaAtiva] = useState("0");
+  const [relacaoManual, setRelacaoManual] = useState("");
+  const [sensibilidadeManual, setSensibilidadeManual] = useState("");
+  const [alvoManual, setAlvoManual] = useState("100");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
 
@@ -62,21 +64,65 @@ export default function Home() {
     }
   }, [horario]);
 
-  const resultado = useMemo(() => {
-    if (!glicemiaAtual || !carboidratos || !faixaAtual) return null;
+  const relacaoEfetiva = useMemo(() => {
+    if (relacaoManual.trim()) return paraNumero(relacaoManual);
+    return faixaAtual?.carboPorUnidade ?? NaN;
+  }, [relacaoManual, faixaAtual]);
 
-    try {
-      return calcularBolus({
-        carboidratos: paraNumero(carboidratos),
-        glicemiaAtual: paraNumero(glicemiaAtual),
-        glicemiaAlvo: 100,
-        horario,
-        insulinaAtiva: paraNumero(insulinaAtiva || "0"),
-      });
-    } catch {
+  const sensibilidadeEfetiva = useMemo(() => {
+    if (sensibilidadeManual.trim()) return paraNumero(sensibilidadeManual);
+    return faixaAtual?.sensibilidade ?? NaN;
+  }, [sensibilidadeManual, faixaAtual]);
+
+  const alvoEfetivo = useMemo(() => {
+    return paraNumero(alvoManual || "100");
+  }, [alvoManual]);
+
+  const resultado = useMemo(() => {
+    if (!glicemiaAtual || !carboidratos) return null;
+
+    const carb = paraNumero(carboidratos);
+    const glicemia = paraNumero(glicemiaAtual);
+    const ativa = paraNumero(insulinaAtiva || "0");
+
+    if (
+      !Number.isFinite(carb) ||
+      !Number.isFinite(glicemia) ||
+      !Number.isFinite(relacaoEfetiva) ||
+      !Number.isFinite(sensibilidadeEfetiva) ||
+      !Number.isFinite(alvoEfetivo) ||
+      relacaoEfetiva <= 0 ||
+      sensibilidadeEfetiva <= 0 ||
+      alvoEfetivo <= 0
+    ) {
       return null;
     }
-  }, [glicemiaAtual, carboidratos, horario, insulinaAtiva, faixaAtual]);
+
+    const doseAlimentar = carb / relacaoEfetiva;
+    const doseCorrecao =
+      glicemia > alvoEfetivo
+        ? (glicemia - alvoEfetivo) / sensibilidadeEfetiva
+        : 0;
+
+    const doseMatematica = Math.max(
+      0,
+      doseAlimentar + doseCorrecao - ativa,
+    );
+
+    return {
+      doseAlimentar,
+      doseCorrecao,
+      doseMatematica,
+      insulinaAtiva: ativa,
+    };
+  }, [
+    glicemiaAtual,
+    carboidratos,
+    insulinaAtiva,
+    relacaoEfetiva,
+    sensibilidadeEfetiva,
+    alvoEfetivo,
+  ]);
 
   async function analisarRefeicao() {
     setErro("");
@@ -158,8 +204,8 @@ export default function Home() {
             Glicemia + refeição + IA
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            A IA estima os carboidratos da refeição. Os parâmetros do horário
-            são aplicados automaticamente.
+            A IA estima os carboidratos da refeição. O horário sugere parâmetros,
+            mas você pode ajustar os valores antes do cálculo.
           </p>
         </header>
 
@@ -209,20 +255,70 @@ export default function Home() {
           </div>
 
           {faixaAtual && (
-            <div className="mt-4 rounded-xl bg-slate-800 p-4 text-sm text-slate-300">
-              <strong>Automático:</strong>{" "}
-              {tipoRefeicao === "cafe"
-                ? "Café da manhã"
-                : tipoRefeicao === "almoco"
-                  ? "Almoço"
-                  : tipoRefeicao === "lanche"
-                    ? "Lanche"
-                    : tipoRefeicao === "jantar"
-                      ? "Jantar"
-                      : "Ceia"}{" · "}
-              {faixaAtual.inicio}–{faixaAtual.fim} ·{" "}
-              {faixaAtual.carboPorUnidade} g/U · sensibilidade{" "}
-              {faixaAtual.sensibilidade} mg/dL/U · alvo pré-refeição 100 mg/dL
+            <div className="mt-4 rounded-xl bg-slate-800 p-4">
+              <div className="text-sm text-slate-300">
+                <strong>Sugestão automática pelo horário:</strong>{" "}
+                {faixaAtual.inicio}–{faixaAtual.fim} ·{" "}
+                {faixaAtual.carboPorUnidade} g/U · sensibilidade{" "}
+                {faixaAtual.sensibilidade} mg/dL/U
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Relação carbo/insulina (g/U)
+                  </label>
+                  <input
+                    inputMode="decimal"
+                    value={relacaoManual}
+                    onChange={(e) => setRelacaoManual(e.target.value)}
+                    placeholder={String(faixaAtual.carboPorUnidade)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Vazio = usa {faixaAtual.carboPorUnidade} g/U.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Sensibilidade (mg/dL/U)
+                  </label>
+                  <input
+                    inputMode="decimal"
+                    value={sensibilidadeManual}
+                    onChange={(e) => setSensibilidadeManual(e.target.value)}
+                    placeholder={String(faixaAtual.sensibilidade)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Vazio = usa {faixaAtual.sensibilidade} mg/dL/U.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Glicemia alvo (mg/dL)
+                  </label>
+                  <input
+                    inputMode="decimal"
+                    value={alvoManual}
+                    onChange={(e) => setAlvoManual(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-300">
+                <strong>Valores usados no cálculo:</strong>{" "}
+                {Number.isFinite(relacaoEfetiva) ? relacaoEfetiva : "-"} g/U ·{" "}
+                sensibilidade{" "}
+                {Number.isFinite(sensibilidadeEfetiva)
+                  ? sensibilidadeEfetiva
+                  : "-"}{" "}
+                mg/dL/U · alvo{" "}
+                {Number.isFinite(alvoEfetivo) ? alvoEfetivo : "-"} mg/dL
+              </div>
             </div>
           )}
         </section>
