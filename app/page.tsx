@@ -1,10 +1,7 @@
-"use client";
+
 
 import { ChangeEvent, useMemo, useState } from "react";
-import {
-  formatarUnidades,
-  obterFaixaBolus,
-} from "@/lib/insulin-calculator";
+import { formatarUnidades } from "@/lib/insulin-calculator";
 
 type EstimateItem = {
   name: string;
@@ -50,33 +47,49 @@ export default function Home() {
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [carboidratos, setCarboidratos] = useState("");
   const [insulinaAtiva, setInsulinaAtiva] = useState("0");
-  const [relacaoManual, setRelacaoManual] = useState("");
-  const [sensibilidadeManual, setSensibilidadeManual] = useState("");
-  const [alvoManual, setAlvoManual] = useState("100");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
 
-  const faixaAtual = useMemo(() => {
-    try {
-      return obterFaixaBolus(horario);
-    } catch {
-      return null;
-    }
-  }, [horario]);
+  const parametrosRefeicao = useMemo(() => {
+    const tabela = {
+      cafe: {
+        nome: "Café da manhã",
+        carboPorUnidade: 6,
+        sensibilidade: 50,
+        glicemiaAlvo: 100,
+      },
+      almoco: {
+        nome: "Almoço",
+        carboPorUnidade: 8,
+        sensibilidade: 50,
+        glicemiaAlvo: 100,
+      },
+      lanche: {
+        nome: "Lanche",
+        carboPorUnidade: 8,
+        sensibilidade: 50,
+        glicemiaAlvo: 100,
+      },
+      jantar: {
+        nome: "Jantar",
+        carboPorUnidade: 12,
+        sensibilidade: 60,
+        glicemiaAlvo: 100,
+      },
+      ceia: {
+        nome: "Ceia",
+        carboPorUnidade: 12,
+        sensibilidade: 70,
+        glicemiaAlvo: 120,
+      },
+    } as const;
 
-  const relacaoEfetiva = useMemo(() => {
-    if (relacaoManual.trim()) return paraNumero(relacaoManual);
-    return faixaAtual?.carboPorUnidade ?? NaN;
-  }, [relacaoManual, faixaAtual]);
+    return tabela[tipoRefeicao as keyof typeof tabela] ?? tabela.almoco;
+  }, [tipoRefeicao]);
 
-  const sensibilidadeEfetiva = useMemo(() => {
-    if (sensibilidadeManual.trim()) return paraNumero(sensibilidadeManual);
-    return faixaAtual?.sensibilidade ?? NaN;
-  }, [sensibilidadeManual, faixaAtual]);
-
-  const alvoEfetivo = useMemo(() => {
-    return paraNumero(alvoManual || "100");
-  }, [alvoManual]);
+  const relacaoEfetiva = parametrosRefeicao.carboPorUnidade;
+  const sensibilidadeEfetiva = parametrosRefeicao.sensibilidade;
+  const alvoEfetivo = parametrosRefeicao.glicemiaAlvo;
 
   const resultado = useMemo(() => {
     if (!glicemiaAtual || !carboidratos) return null;
@@ -204,8 +217,8 @@ export default function Home() {
             Glicemia + refeição + IA
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            A IA estima os carboidratos da refeição. O horário sugere parâmetros,
-            mas você pode ajustar os valores antes do cálculo.
+            A IA estima os carboidratos da refeição. Os parâmetros mudam
+            automaticamente conforme o tipo de refeição selecionado.
           </p>
         </header>
 
@@ -254,73 +267,45 @@ export default function Home() {
             </div>
           </div>
 
-          {faixaAtual && (
-            <div className="mt-4 rounded-xl bg-slate-800 p-4">
-              <div className="text-sm text-slate-300">
-                <strong>Sugestão automática pelo horário:</strong>{" "}
-                {faixaAtual.inicio}–{faixaAtual.fim} ·{" "}
-                {faixaAtual.carboPorUnidade} g/U · sensibilidade{" "}
-                {faixaAtual.sensibilidade} mg/dL/U
-              </div>
+          <div className="mt-4 rounded-xl bg-slate-800 p-4">
+            <div className="text-sm text-slate-300">
+              <strong>Parâmetros automáticos para {parametrosRefeicao.nome}:</strong>
+            </div>
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Relação carbo/insulina (g/U)
-                  </label>
-                  <input
-                    inputMode="decimal"
-                    value={relacaoManual}
-                    onChange={(e) => setRelacaoManual(e.target.value)}
-                    placeholder={String(faixaAtual.carboPorUnidade)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
-                  />
-                  <p className="mt-1 text-xs text-slate-500">
-                    Vazio = usa {faixaAtual.carboPorUnidade} g/U.
-                  </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Relação carbo/insulina
                 </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Sensibilidade (mg/dL/U)
-                  </label>
-                  <input
-                    inputMode="decimal"
-                    value={sensibilidadeManual}
-                    onChange={(e) => setSensibilidadeManual(e.target.value)}
-                    placeholder={String(faixaAtual.sensibilidade)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
-                  />
-                  <p className="mt-1 text-xs text-slate-500">
-                    Vazio = usa {faixaAtual.sensibilidade} mg/dL/U.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Glicemia alvo (mg/dL)
-                  </label>
-                  <input
-                    inputMode="decimal"
-                    value={alvoManual}
-                    onChange={(e) => setAlvoManual(e.target.value)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
-                  />
+                <div className="mt-1 text-xl font-bold">
+                  {parametrosRefeicao.carboPorUnidade} g/U
                 </div>
               </div>
 
-              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-300">
-                <strong>Valores usados no cálculo:</strong>{" "}
-                {Number.isFinite(relacaoEfetiva) ? relacaoEfetiva : "-"} g/U ·{" "}
-                sensibilidade{" "}
-                {Number.isFinite(sensibilidadeEfetiva)
-                  ? sensibilidadeEfetiva
-                  : "-"}{" "}
-                mg/dL/U · alvo{" "}
-                {Number.isFinite(alvoEfetivo) ? alvoEfetivo : "-"} mg/dL
+              <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Sensibilidade
+                </div>
+                <div className="mt-1 text-xl font-bold">
+                  {parametrosRefeicao.sensibilidade} mg/dL/U
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Glicemia alvo
+                </div>
+                <div className="mt-1 text-xl font-bold">
+                  {parametrosRefeicao.glicemiaAlvo} mg/dL
+                </div>
               </div>
             </div>
-          )}
+
+            <p className="mt-3 text-xs text-slate-500">
+              O horário fica apenas como registro do evento; os parâmetros acima
+              são definidos pelo tipo de refeição escolhido.
+            </p>
+          </div>
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
