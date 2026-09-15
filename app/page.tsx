@@ -43,6 +43,7 @@ async function arquivoParaDataUrl(file: File) {
 
 export default function Home() {
   const [horario, setHorario] = useState(horaAtual);
+  const [tipoRefeicao, setTipoRefeicao] = useState("almoco");
   const [glicemiaAtual, setGlicemiaAtual] = useState("");
   const [descricao, setDescricao] = useState("");
   const [porcao, setPorcao] = useState("");
@@ -100,6 +101,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mealType: tipoRefeicao,
           description: descricao,
           portion: porcao,
           imageDataUrl,
@@ -164,7 +166,24 @@ export default function Home() {
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="text-lg font-semibold">1. Glicemia e horário</h2>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Tipo de refeição
+              </label>
+              <select
+                value={tipoRefeicao}
+                onChange={(e) => setTipoRefeicao(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              >
+                <option value="cafe">Café da manhã</option>
+                <option value="almoco">Almoço</option>
+                <option value="lanche">Lanche</option>
+                <option value="jantar">Jantar</option>
+                <option value="ceia">Ceia</option>
+              </select>
+            </div>
+
             <div>
               <label className="mb-2 block text-sm font-medium">Horário</label>
               <input
@@ -192,6 +211,15 @@ export default function Home() {
           {faixaAtual && (
             <div className="mt-4 rounded-xl bg-slate-800 p-4 text-sm text-slate-300">
               <strong>Automático:</strong>{" "}
+              {tipoRefeicao === "cafe"
+                ? "Café da manhã"
+                : tipoRefeicao === "almoco"
+                  ? "Almoço"
+                  : tipoRefeicao === "lanche"
+                    ? "Lanche"
+                    : tipoRefeicao === "jantar"
+                      ? "Jantar"
+                      : "Ceia"}{" · "}
               {faixaAtual.inicio}–{faixaAtual.fim} ·{" "}
               {faixaAtual.carboPorUnidade} g/U · sensibilidade{" "}
               {faixaAtual.sensibilidade} mg/dL/U · alvo pré-refeição 100 mg/dL
