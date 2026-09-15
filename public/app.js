@@ -2,7 +2,10 @@
   "use strict";
 
   var STORAGE_KEY = "diario-aloncinho-v1";
+  var TOKEN_KEY = "diario-aloncinho-token";
+  var PERIOD_KEY = "diario-aloncinho-periodo";
   var selectedCategory = "cafe";
+  var periodDays = 30;
   var pendingItems = [];
   var previewUrl = "";
   var latestEstimate = null;
@@ -40,6 +43,7 @@
   var estimateDescription = document.getElementById("estimate-description");
   var estimatePortion = document.getElementById("estimate-portion");
   var estimateAccessToken = document.getElementById("estimate-access-token");
+  var rememberAccessToken = document.getElementById("remember-access-token");
   var estimateConsent = document.getElementById("estimate-consent");
   var estimateSubmit = document.getElementById("estimate-submit");
   var estimateStatus = document.getElementById("estimate-status");
@@ -189,7 +193,27 @@
     state.meals.push(meal);
     saveState();
     renderMeals();
+    renderDashboard(); // o card "Carboidratos hoje" vive no painel
     return meal;
+  }
+
+  function removeReading(id) {
+    var before = state.readings.length;
+    state.readings = state.readings.filter(function (reading) { return reading.id !== id; });
+    if (state.readings.length === before) return false;
+    saveState();
+    renderDashboard();
+    return true;
+  }
+
+  function removeMeal(id) {
+    var before = state.meals.length;
+    state.meals = state.meals.filter(function (meal) { return meal.id !== id; });
+    if (state.meals.length === before) return false;
+    saveState();
+    renderMeals();
+    renderDashboard();
+    return true;
   }
 
   function getDiarySummary() {
@@ -219,6 +243,38 @@
       .sort(function (a, b) {
         return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
       });
+  }
+
+  // periodDays === 0 significa "tudo"; as leituras já chegam ordenadas da mais recente.
+  function readingsInPeriod() {
+    var readings = validReadings();
+    if (!periodDays) return readings;
+    var cutoff = Date.now() - periodDays * 86400000;
+    return readings.filter(function (reading) {
+      return new Date(reading.timestamp).getTime() >= cutoff;
+    });
+  }
+
+  function isToday(value) {
+    var date = new Date(value);
+    return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString();
+  }
+
+  function carbsToday() {
+    return state.meals
+      .filter(function (meal) { return isToday(meal.recordedAt); })
+      .reduce(function (sum, meal) {
+        var totals = mealTotals(Array.isArray(meal.items) ? meal.items : []);
+        return sum + carbMidpoint(totals.min, totals.max);
+      }, 0);
+  }
+
+  function relativeTime(value) {
+    var minutes = Math.round((Date.now() - new Date(value).getTime()) / 60000);
+    var formatter = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
+    if (Math.abs(minutes) < 60) return formatter.format(-minutes, "minute");
+    if (Math.abs(minutes) < 1440) return formatter.format(-Math.round(minutes / 60), "hour");
+    return formatter.format(-Math.round(minutes / 1440), "day");
   }
 
   function formatDate(value) {
@@ -265,6 +321,18 @@
     return formatGrams(min) + " – " + formatGrams(max);
   }
 
+  // Número único para a contagem: o meio da faixa estimada, arredondado em gramas.
+  function carbMidpoint(min, max) {
+    var low = Number(min) || 0;
+    var high = Number(max) || 0;
+    return Math.round((low + high) / 2);
+  }
+
+  function formatCarbTotal(min, max) {
+    if (Number(min) === Number(max)) return formatGrams(min);
+    return "≈ " + formatGrams(carbMidpoint(min, max));
+  }
+
   function setEstimateStatus(message, isError) {
     estimateStatus.textContent = message || "";
     estimateStatus.classList.toggle("is-error", Boolean(isError));
@@ -285,12 +353,28 @@
     photoPreview.textContent = "Nenhuma foto selecionada.";
   }
 
+  function applyStoredToken() {
+    var stored = localStorage.getItem(TOKEN_KEY);
+    if (!stored) return;
+    estimateAccessToken.value = stored;
+    rememberAccessToken.checked = true;
+  }
+
+  function rememberTokenChoice() {
+    if (rememberAccessToken.checked && estimateAccessToken.value) {
+      localStorage.setItem(TOKEN_KEY, estimateAccessToken.value);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  }
+
   function resetEstimateForm() {
     aiEstimateForm.reset();
     mealPhoto.disabled = true;
     clearSelectedPhoto();
     clearEstimateResult();
     setEstimateStatus("", false);
+    applyStoredToken();
   }
 
   function readPhotoAsDataUrl(file) {
@@ -363,7 +447,8 @@
       ? '<p class="estimate-question"><strong>Para refinar:</strong> ' + escapeHtml(estimate.clarification) + '</p>' : "";
 
     estimateResultContent.innerHTML = '<div class="estimate-result-heading"><div><p class="eyebrow">Estimativa pronta</p><h4>' +
-      formatRange(estimate.totals.min, estimate.totals.max) + ' de carboidratos</h4></div><span>confira antes de registrar</span></div>' +
+      formatCarbTotal(estimate.totals.min, estimate.totals.max) + ' de carboidratos<small>faixa estimada: ' +
+      formatRange(estimate.totals.min, estimate.totals.max) + '</small></h4></div><span>confira antes de registrar</span></div>' +
       '<ul class="estimate-items">' + items + '</ul>' + assumptions + clarification;
     estimateResult.hidden = false;
   }
@@ -376,14 +461,12 @@
     if (!description || !portion) {
       throw new Error("Informe o alimento ou a refeição e a porção que vai consumir.");
     }
-    if (!estimateConsent.checked) {
-      throw new Error("Autorize o envio da descrição e da porção antes de pedir a estimativa.");
-    }
     if (!accessToken) {
-      throw new Error("Informe o código de acesso privado do site.");
+      throw new Error("Informe o código de acesso em “Acesso privado do site”.");
     }
 
-    var file = mealPhoto.files && mealPhoto.files[0];
+    // A foto é o único dado que exige autorização explícita; o texto você digitou e enviou.
+    var file = estimateConsent.checked && mealPhoto.files ? mealPhoto.files[0] : null;
     var imageDataUrl = await readPhotoAsDataUrl(file);
     var response;
     var responseBody;
@@ -544,9 +627,10 @@
     return state.meals.slice().sort(function (a, b) {
       return new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime();
     }).map(function (meal) {
+      var totals = mealTotals(Array.isArray(meal.items) ? meal.items : []);
       var items = (meal.items || []).map(function (item) {
         return escapeHtml(item.name) + " (" + formatRange(item.min, item.max) + ")";
-      }).join("<br>");
+      }).join("<br>") + "<br><strong>Total " + formatCarbTotal(totals.min, totals.max) + "</strong>";
       return "<tr><td>" + escapeHtml(formatDate(meal.recordedAt)) + "</td><td>" + escapeHtml(mealLabels[meal.category] || meal.category) + "</td><td>" + items + "</td><td>" + escapeHtml(meal.note || "") + "</td></tr>";
     }).join("");
   }
@@ -592,8 +676,33 @@
     }).format(new Date());
   }
 
+  function renderInsights(readings) {
+    var last = readings[0];
+    document.getElementById("insight-last").textContent = last ? last.value + " mg/dL" : "—";
+    document.getElementById("insight-last-detail").textContent = last
+      ? statusText(classify(Number(last.value))) + " · " + relativeTime(last.timestamp)
+      : "Nenhuma medição no período";
+
+    var average = readings.length
+      ? Math.round(readings.reduce(function (sum, reading) { return sum + Number(reading.value); }, 0) / readings.length)
+      : null;
+    document.getElementById("insight-average").textContent = average === null ? "—" : average + " mg/dL";
+    document.getElementById("insight-average-detail").textContent = readings.length
+      ? readings.length + (readings.length === 1 ? " medição no período" : " medições no período")
+      : "Sem medições no período";
+
+    var mealsToday = state.meals.filter(function (meal) { return isToday(meal.recordedAt); }).length;
+    document.getElementById("insight-carbs").textContent = mealsToday ? "≈ " + formatGrams(carbsToday()) : "—";
+    document.getElementById("insight-carbs-detail").textContent = mealsToday
+      ? mealsToday + (mealsToday === 1 ? " refeição salva hoje" : " refeições salvas hoje")
+      : "Nenhuma refeição salva hoje";
+  }
+
   function renderDashboard() {
-    var readings = validReadings();
+    // O painel segue o período escolhido; a lista de medições mostra sempre tudo,
+    // para nenhum registro parecer perdido por causa do filtro.
+    var allReadings = validReadings();
+    var readings = readingsInPeriod();
     var counts = { below: 0, range: 0, above: 0 };
 
     renderTrend(readings);
@@ -605,34 +714,37 @@
     document.getElementById("below-count").textContent = counts.below;
     document.getElementById("range-count").textContent = counts.range;
     document.getElementById("above-count").textContent = counts.above;
-    document.getElementById("reading-total").textContent = readings.length;
+    document.getElementById("reading-total").textContent = allReadings.length;
 
     var percentage = readings.length ? Math.round((counts.range / readings.length) * 100) : null;
     document.getElementById("range-percent").textContent = percentage === null ? "—" : percentage + "%";
     document.getElementById("range-detail").textContent = readings.length
       ? counts.range + " de " + readings.length + " medições válidas"
-      : "Adicione a primeira medição";
+      : (allReadings.length ? "Nenhuma medição neste período" : "Adicione a primeira medição");
 
     var total = readings.length || 1;
     document.getElementById("below-segment").style.width = (counts.below / total) * 100 + "%";
     document.getElementById("range-segment").style.width = readings.length ? (counts.range / total) * 100 + "%" : "100%";
     document.getElementById("above-segment").style.width = (counts.above / total) * 100 + "%";
 
+    renderInsights(readings);
+
     var recent = document.getElementById("recent-readings");
-    if (!readings.length) {
+    if (!allReadings.length) {
       recent.innerHTML = '<div class="empty-state compact"><span aria-hidden="true">⌁</span><p>Suas últimas medições aparecerão aqui.</p></div>';
       return;
     }
 
-    recent.innerHTML = readings.map(function (reading) {
+    recent.innerHTML = allReadings.map(function (reading) {
       var status = classify(Number(reading.value));
       var source = reading.source === "cgm" ? "CGM registrado" : "Medição de dedo";
       var note = reading.note ? " · " + escapeHtml(reading.note) : "";
       return '<div class="reading-row">' +
         '<span class="status-dot ' + status + '" aria-hidden="true"></span>' +
-        '<div><strong class="reading-value">' + escapeHtml(reading.value) + '</strong> <span class="reading-meta">mg/dL</span>' +
+        '<div><strong class="reading-value">' + escapeHtml(reading.value) + '</strong> <span class="reading-meta inline">mg/dL</span>' +
         '<small class="reading-meta">' + source + ' · ' + formatDate(reading.timestamp) + note + '</small></div>' +
         '<span class="status-label ' + status + '">' + statusText(status) + '</span>' +
+        '<button class="row-remove" type="button" data-remove-reading="' + escapeHtml(reading.id) + '" title="Remover medição" aria-label="Remover medição de ' + escapeHtml(reading.value) + ' mg/dL">×</button>' +
         '</div>';
     }).join("");
   }
@@ -642,8 +754,11 @@
     var total = mealTotals(pendingItems);
     document.getElementById("item-count").textContent = pendingItems.length;
     document.getElementById("meal-total").textContent = pendingItems.length
-      ? formatRange(total.min, total.max)
+      ? formatCarbTotal(total.min, total.max)
       : "—";
+    document.getElementById("meal-total-range").textContent = pendingItems.length
+      ? "faixa estimada: " + formatRange(total.min, total.max)
+      : "Adicione itens para somar";
 
     if (!pendingItems.length) {
       pending.innerHTML = '<div class="empty-state compact"><span aria-hidden="true">＋</span><p>Adicione um alimento para ver a estimativa.</p></div>';
@@ -654,7 +769,7 @@
       return '<div class="pending-row">' +
         '<div><strong>' + escapeHtml(item.name) + '</strong><small>' + sourceLabels[item.source] + '</small></div>' +
         '<span class="carb-range">' + formatRange(item.min, item.max) + '</span>' +
-        '<button class="remove-item" type="button" data-remove-item="' + index + '">Remover</button>' +
+        '<button class="row-remove" type="button" data-remove-item="' + index + '" title="Remover item" aria-label="Remover ' + escapeHtml(item.name) + '">×</button>' +
         '</div>';
     }).join("");
   }
@@ -679,7 +794,9 @@
         '<span class="saved-meal-date">' + formatDate(meal.recordedAt) + '</span></div>' +
         '<h3>' + (itemNames || "Refeição registrada") + '</h3>' +
         '<p>' + (meal.note ? escapeHtml(meal.note) : "Itens confirmados no diário.") + '</p>' +
-        '<span class="saved-meal-total">' + formatRange(total.min, total.max) + ' de carboidratos</span>' +
+        '<span class="saved-meal-total">' + formatCarbTotal(total.min, total.max) + ' de carboidratos' +
+        '<small>faixa: ' + formatRange(total.min, total.max) + '</small></span>' +
+        '<button class="row-remove" type="button" data-remove-meal="' + escapeHtml(meal.id) + '" title="Remover refeição" aria-label="Remover refeição">×</button>' +
         '</article>';
     }).join("");
   }
@@ -690,6 +807,21 @@
     renderPendingItems();
     renderMeals();
     renderMedicalOrientation();
+  }
+
+  function selectPeriod(days) {
+    periodDays = Number.isFinite(days) && days >= 0 ? days : 30;
+    document.querySelectorAll(".period-chip").forEach(function (chip) {
+      chip.classList.toggle("active", Number(chip.dataset.period) === periodDays);
+    });
+    renderDashboard();
+  }
+
+  function mealForHour(hour) {
+    if (hour < 11) return "cafe";
+    if (hour < 15) return "almoco";
+    if (hour < 18) return "lanche";
+    return "jantar";
   }
 
   function selectMeal(category) {
@@ -796,6 +928,30 @@
     pendingItems.splice(Number(index), 1);
     renderPendingItems();
   });
+
+  document.getElementById("recent-readings").addEventListener("click", function (event) {
+    var id = event.target.dataset.removeReading;
+    if (!id) return;
+    if (!window.confirm("Remover esta medição do diário?")) return;
+    if (removeReading(id)) showToast("Medição removida.");
+  });
+
+  document.getElementById("meal-history").addEventListener("click", function (event) {
+    var id = event.target.dataset.removeMeal;
+    if (!id) return;
+    if (!window.confirm("Remover esta refeição do diário?")) return;
+    if (removeMeal(id)) showToast("Refeição removida.");
+  });
+
+  document.querySelectorAll(".period-chip").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      selectPeriod(Number(chip.dataset.period));
+      localStorage.setItem(PERIOD_KEY, String(periodDays));
+    });
+  });
+
+  estimateAccessToken.addEventListener("change", rememberTokenChoice);
+  rememberAccessToken.addEventListener("change", rememberTokenChoice);
 
   document.getElementById("save-meal").addEventListener("click", function () {
     if (!pendingItems.length) {
@@ -1002,8 +1158,11 @@
     }
   });
 
+  var storedPeriod = localStorage.getItem(PERIOD_KEY);
   glucoseTime.value = localDateTimeValue(new Date());
-  selectMeal(selectedCategory);
+  applyStoredToken();
+  selectMeal(mealForHour(new Date().getHours()));
+  selectPeriod(storedPeriod === null ? 30 : Number(storedPeriod));
   renderAll();
   installWebMcpTools();
 }());

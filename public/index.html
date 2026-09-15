@@ -7,7 +7,9 @@
       name="description"
       content="Diário pessoal de glicose e refeições com estimativa de carboidratos."
     />
-    <meta name="theme-color" content="#0a1e2a" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f1f5f3" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#081318" />
     <title>Diário do Aloncinho</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
@@ -65,6 +67,12 @@
           <div class="range-number">80 <span>—</span> 190 <small>mg/dL</small></div>
         </div>
 
+        <div class="period-filter" role="group" aria-label="Período do painel">
+          <button class="period-chip" type="button" data-period="7">7 dias</button>
+          <button class="period-chip active" type="button" data-period="30">30 dias</button>
+          <button class="period-chip" type="button" data-period="0">Tudo</button>
+        </div>
+
         <div class="metric-grid">
           <article class="metric-card below">
             <span class="metric-label">Abaixo da faixa</span>
@@ -97,6 +105,24 @@
           Para registros pontuais, este painel mostra o percentual de medições na
           faixa — não tempo na faixa.
         </p>
+
+        <div class="insight-row">
+          <div class="insight">
+            <span>Última medição</span>
+            <strong id="insight-last">—</strong>
+            <small id="insight-last-detail">Nenhuma medição registrada</small>
+          </div>
+          <div class="insight">
+            <span>Média do período</span>
+            <strong id="insight-average">—</strong>
+            <small id="insight-average-detail">Aparece a partir da 1ª medição</small>
+          </div>
+          <div class="insight">
+            <span>Carboidratos hoje</span>
+            <strong id="insight-carbs">—</strong>
+            <small id="insight-carbs-detail">Nenhuma refeição salva hoje</small>
+          </div>
+        </div>
       </section>
 
       <section class="workspace" aria-label="Registros do diário">
@@ -279,11 +305,11 @@
                 <div class="photo-area ai-photo-area">
                   <div>
                     <strong>Foto da refeição <span>opcional</span></strong>
-                    <p>A foto só é enviada quando você pede uma estimativa e autoriza abaixo. Ela não é guardada no diário.</p>
+                    <p>A foto ajuda a IA a reconhecer os alimentos e a porção. Ela só é enviada quando você autoriza abaixo e não fica guardada no diário.</p>
                   </div>
                   <label class="consent-toggle">
                     <input id="estimate-consent" type="checkbox" />
-                    <span>Autorizo enviar a descrição, a porção e, se selecionada, esta foto exclusivamente para a estimativa de carboidratos.</span>
+                    <span>Autorizo enviar uma foto junto com a descrição para a estimativa de carboidratos.</span>
                   </label>
                   <div class="photo-controls">
                     <input id="meal-photo" type="file" accept="image/jpeg,image/png,image/webp" disabled />
@@ -297,7 +323,11 @@
                     <span>Código de acesso</span>
                     <input id="estimate-access-token" type="password" maxlength="180" autocomplete="off" placeholder="Definido nas configurações privadas do Vercel" />
                   </label>
-                  <p>Esse código protege o uso particular do seu site. Não é a chave da OpenAI e não é salvo no diário.</p>
+                  <label class="remember-toggle">
+                    <input id="remember-access-token" type="checkbox" checked />
+                    <span>Lembrar o código neste navegador</span>
+                  </label>
+                  <p>Esse código protege o uso particular do seu site. Não é a chave da OpenAI e não é enviado junto com os registros do diário.</p>
                 </details>
 
                 <div class="estimate-actions">
@@ -376,8 +406,11 @@
               </div>
             </div>
             <div class="meal-total">
-              <span>Total estimado</span>
-              <strong id="meal-total">—</strong>
+              <span>Total de carboidratos</span>
+              <div class="meal-total-value">
+                <strong id="meal-total">—</strong>
+                <small id="meal-total-range"></small>
+              </div>
             </div>
             <button id="save-meal" class="primary-button save-meal" type="button">
               Salvar refeição
