@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Diário pessoal de glicose e refeições com estimativa de carboidratos."
+    />
+    <meta name="theme-color" content="#0a1e2a" />
+    <title>Diário do Aloncinho</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#painel" aria-label="Ir para o painel">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <path d="M16 3.7c-4.4 5.1-8.3 9.3-8.3 15A8.3 8.3 0 0 0 16 27a8.3 8.3 0 0 0 8.3-8.3c0-5.7-3.9-9.9-8.3-15Z" />
+              <path d="M12.2 19.6c.6 2.2 2 3.4 4.3 3.8" />
+            </svg>
+          </span>
+          <span>
+            <strong>Diário do Aloncinho</strong>
+            <small>Glicose &amp; refeições</small>
+          </span>
+        </a>
+        <div class="topbar-actions">
+          <span class="local-pill"><i></i> Salvo neste dispositivo</span>
+          <button class="quiet-button" id="open-data-help" type="button">
+            Sobre os dados
+          </button>
+        </div>
+      </header>
+
+      <section class="intro" id="painel" aria-labelledby="welcome-title">
+        <div>
+          <p class="eyebrow" id="today-label">Hoje</p>
+          <h1 id="welcome-title">Seu dia, de um jeito mais claro.</h1>
+          <p class="intro-copy">
+            Registre as medições e organize as refeições. A faixa pessoal do painel
+            vai de <strong>80 a 190 mg/dL</strong>.
+          </p>
+        </div>
+        <div class="safety-note">
+          <span class="shield" aria-hidden="true">✓</span>
+          <span>Nenhum cálculo de dose realizado</span>
+        </div>
+      </section>
+
+      <aside class="medical-disclaimer" role="note">
+        <span aria-hidden="true">i</span>
+        <p><strong>Ferramenta de registro e apoio.</strong> Este app não substitui orientação médica. As decisões de dose devem seguir o plano que você recebeu e a orientação da sua equipe de saúde.</p>
+      </aside>
+
+      <section class="range-panel" aria-labelledby="range-title">
+        <div class="range-header">
+          <div>
+            <p class="eyebrow">Painel de glicose</p>
+            <h2 id="range-title">Faixa pessoal</h2>
+          </div>
+          <div class="range-number">80 <span>—</span> 190 <small>mg/dL</small></div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card below">
+            <span class="metric-label">Abaixo da faixa</span>
+            <strong id="below-count">0</strong>
+            <small>leituras abaixo de 80</small>
+          </article>
+          <article class="metric-card in-range">
+            <span class="metric-label">Na faixa</span>
+            <strong id="range-count">0</strong>
+            <small>leituras entre 80 e 190</small>
+          </article>
+          <article class="metric-card above">
+            <span class="metric-label">Acima da faixa</span>
+            <strong id="above-count">0</strong>
+            <small>leituras acima de 190</small>
+          </article>
+          <article class="metric-card summary">
+            <span class="metric-label">Medições na faixa</span>
+            <strong id="range-percent">—</strong>
+            <small id="range-detail">Adicione a primeira medição</small>
+          </article>
+        </div>
+
+        <div class="range-visual" aria-label="Distribuição das medições">
+          <span class="range-segment below-segment" id="below-segment"></span>
+          <span class="range-segment in-range-segment" id="range-segment"></span>
+          <span class="range-segment above-segment" id="above-segment"></span>
+        </div>
+        <p class="range-caption">
+          Para registros pontuais, este painel mostra o percentual de medições na
+          faixa — não tempo na faixa.
+        </p>
+      </section>
+
+      <section class="workspace" aria-label="Registros do diário">
+        <div class="entry-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Novo registro</p>
+              <h2>Glicose</h2>
+            </div>
+            <span class="step-label">1 de 2</span>
+          </div>
+
+          <form id="glucose-form" class="entry-form">
+            <label class="field glucose-field">
+              <span>Valor da glicose</span>
+              <div class="number-input">
+                <input
+                  id="glucose-value"
+                  name="glucose"
+                  type="number"
+                  min="1"
+                  max="999"
+                  inputmode="numeric"
+                  placeholder="Ex.: 128"
+                  required
+                />
+                <b>mg/dL</b>
+              </div>
+            </label>
+            <label class="field">
+              <span>Data e hora</span>
+              <input id="glucose-time" name="timestamp" type="datetime-local" required />
+            </label>
+            <label class="field">
+              <span>Origem</span>
+              <select id="glucose-source" name="source">
+                <option value="manual">Medição de dedo</option>
+                <option value="cgm">CGM registrado manualmente</option>
+              </select>
+            </label>
+            <label class="field full">
+              <span>Observação <em>opcional</em></span>
+              <input
+                id="glucose-note"
+                name="note"
+                type="text"
+                maxlength="160"
+                placeholder="Ex.: antes do almoço"
+              />
+            </label>
+            <button class="primary-button full" type="submit">Adicionar medição</button>
+          </form>
+        </div>
+
+        <aside class="reading-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Histórico de medições</p>
+              <h2>Medições salvas</h2>
+            </div>
+            <span id="reading-total" class="count-badge">0</span>
+          </div>
+          <div id="recent-readings" class="recent-readings">
+            <div class="empty-state compact">
+              <span aria-hidden="true">⌁</span>
+              <p>Suas medições aparecerão aqui.</p>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="trend-section" aria-labelledby="trend-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Tendência</p>
+            <h2 id="trend-title">Evolução das medições</h2>
+          </div>
+          <span class="trend-note">últimas 14 leituras válidas</span>
+        </div>
+        <div class="trend-chart-wrap">
+          <svg id="glucose-trend-chart" class="trend-chart" viewBox="0 0 760 260" role="img" aria-labelledby="trend-chart-title trend-chart-description">
+            <title id="trend-chart-title">Tendência de glicose</title>
+            <desc id="trend-chart-description">O gráfico é atualizado com as medições salvas no diário.</desc>
+          </svg>
+          <div id="trend-empty" class="trend-empty">Registre ao menos duas medições para ver a tendência.</div>
+        </div>
+        <p id="trend-summary" class="trend-summary">O gráfico usa medições registradas e não prevê resultados futuros.</p>
+      </section>
+
+      <section class="medical-orientation" aria-labelledby="medical-orientation-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Referência particular</p>
+            <h2 id="medical-orientation-title">Orientação médica</h2>
+          </div>
+          <span class="read-only-pill">somente leitura</span>
+        </div>
+        <p class="orientation-intro">Transcreva aqui a orientação que recebeu. Este diário apenas guarda e exibe o texto: não interpreta, não altera e não usa esse conteúdo para calcular doses.</p>
+        <div class="orientation-grid">
+          <form id="medical-orientation-form" class="orientation-form">
+            <label class="field">
+              <span>Texto informado por você</span>
+              <textarea id="medical-orientation-input" maxlength="2000" placeholder="Digite aqui a orientação que deseja guardar como referência."></textarea>
+            </label>
+            <button class="secondary-button" type="submit">Salvar como referência</button>
+          </form>
+          <article class="orientation-reference-card" aria-live="polite">
+            <p class="eyebrow">Texto salvo</p>
+            <div id="medical-orientation-display" class="orientation-display">
+              <p>Nenhuma orientação foi salva neste navegador.</p>
+            </div>
+            <small id="medical-orientation-date"></small>
+          </article>
+        </div>
+        <p class="calculation-boundary">Nenhum cálculo de dose realizado.</p>
+      </section>
+
+      <section class="meal-section" aria-labelledby="meal-title">
+        <div class="meal-section-heading">
+          <div>
+            <p class="eyebrow">Diário de refeições</p>
+            <h2 id="meal-title">Em que momento do dia você está?</h2>
+          </div>
+          <p>Escolha uma refeição e registre os itens com uma faixa de carboidratos.</p>
+        </div>
+
+        <div class="meal-picker" role="list" aria-label="Escolher refeição">
+          <button class="meal-choice active" type="button" data-category="cafe">
+            <span class="meal-icon" aria-hidden="true">☼</span>
+            <span>Café</span>
+            <small>começar o dia</small>
+          </button>
+          <button class="meal-choice" type="button" data-category="almoco">
+            <span class="meal-icon" aria-hidden="true">◒</span>
+            <span>Almoço</span>
+            <small>meio do dia</small>
+          </button>
+          <button class="meal-choice" type="button" data-category="lanche">
+            <span class="meal-icon" aria-hidden="true">◌</span>
+            <span>Lanche</span>
+            <small>entre refeições</small>
+          </button>
+          <button class="meal-choice" type="button" data-category="jantar">
+            <span class="meal-icon" aria-hidden="true">☾</span>
+            <span>Jantar</span>
+            <small>fim do dia</small>
+          </button>
+        </div>
+
+        <div class="meal-workspace">
+          <div class="meal-form-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow" id="selected-meal-label">Café</p>
+                <h3>Monte sua refeição</h3>
+              </div>
+              <span class="estimate-tag">Estimativa de carboidratos</span>
+            </div>
+
+            <section class="ai-estimate-card" aria-labelledby="ai-estimate-title">
+              <div class="ai-estimate-heading">
+                <div>
+                  <p class="eyebrow">Assistente de carboidratos</p>
+                  <h4 id="ai-estimate-title">Descreva e informe a porção</h4>
+                </div>
+                <span class="ai-badge">IA com confirmação</span>
+              </div>
+              <p class="ai-estimate-copy">Diga o alimento ou a refeição e a proporção que pretende consumir. A IA devolve uma faixa de carboidratos para você conferir antes de adicionar ao diário.</p>
+
+              <form id="ai-estimate-form" class="estimate-form">
+                <label class="field estimate-description-field">
+                  <span>Alimento ou refeição</span>
+                  <textarea id="estimate-description" maxlength="700" required placeholder="Ex.: arroz, feijão, frango e salada"></textarea>
+                </label>
+                <label class="field">
+                  <span>Qual porção você vai consumir?</span>
+                  <input id="estimate-portion" type="text" maxlength="220" required placeholder="Ex.: 2 colheres de arroz e 1 concha de feijão" />
+                </label>
+
+                <div class="photo-area ai-photo-area">
+                  <div>
+                    <strong>Foto da refeição <span>opcional</span></strong>
+                    <p>A foto só é enviada quando você pede uma estimativa e autoriza abaixo. Ela não é guardada no diário.</p>
+                  </div>
+                  <label class="consent-toggle">
+                    <input id="estimate-consent" type="checkbox" />
+                    <span>Autorizo enviar a descrição, a porção e, se selecionada, esta foto exclusivamente para a estimativa de carboidratos.</span>
+                  </label>
+                  <div class="photo-controls">
+                    <input id="meal-photo" type="file" accept="image/jpeg,image/png,image/webp" disabled />
+                    <output id="photo-preview" aria-live="polite">Nenhuma foto selecionada.</output>
+                  </div>
+                </div>
+
+                <details class="private-access">
+                  <summary>Acesso privado do site</summary>
+                  <label class="field">
+                    <span>Código de acesso</span>
+                    <input id="estimate-access-token" type="password" maxlength="180" autocomplete="off" placeholder="Definido nas configurações privadas do Vercel" />
+                  </label>
+                  <p>Esse código protege o uso particular do seu site. Não é a chave da OpenAI e não é salvo no diário.</p>
+                </details>
+
+                <div class="estimate-actions">
+                  <button id="estimate-submit" class="primary-button" type="submit">Estimar carboidratos</button>
+                  <output id="estimate-status" class="estimate-status" aria-live="polite"></output>
+                </div>
+              </form>
+
+              <section id="estimate-result" class="estimate-result" aria-live="polite" hidden>
+                <div id="estimate-result-content"></div>
+                <button id="add-estimate-items" class="secondary-button" type="button">Confirmar e adicionar ao diário</button>
+              </section>
+            </section>
+
+            <div class="manual-entry-heading">
+              <div>
+                <p class="eyebrow">Registro manual</p>
+                <h4>Já sabe os carboidratos?</h4>
+              </div>
+              <span>Você também pode adicionar a faixa manualmente.</span>
+            </div>
+
+            <form id="item-form" class="item-form">
+              <label class="field item-name-field">
+                <span>Alimento ou bebida</span>
+                <input
+                  id="item-name"
+                  type="text"
+                  maxlength="80"
+                  placeholder="Ex.: pão francês"
+                />
+              </label>
+              <label class="field">
+                <span>Carboidratos mín.</span>
+                <div class="number-input small">
+                  <input id="item-min" type="number" min="0" max="999" inputmode="decimal" placeholder="0" />
+                  <b>g</b>
+                </div>
+              </label>
+              <label class="field">
+                <span>Carboidratos máx.</span>
+                <div class="number-input small">
+                  <input id="item-max" type="number" min="0" max="999" inputmode="decimal" placeholder="0" />
+                  <b>g</b>
+                </div>
+              </label>
+              <label class="field">
+                <span>Origem da informação</span>
+                <select id="item-source">
+                  <option value="descricao">Descrição</option>
+                  <option value="rotulo">Rótulo</option>
+                  <option value="foto">Foto local</option>
+                </select>
+              </label>
+              <button class="secondary-button" id="add-item" type="submit">Adicionar item</button>
+            </form>
+
+            <label class="field meal-description">
+              <span>Observação da refeição <em>opcional</em></span>
+              <input id="meal-note" type="text" maxlength="160" placeholder="Ex.: com manteiga, sem açúcar" />
+            </label>
+          </div>
+
+          <aside class="meal-summary-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Refeição atual</p>
+                <h3>Itens adicionados</h3>
+              </div>
+              <span id="item-count" class="count-badge">0</span>
+            </div>
+            <div id="pending-items" class="pending-items">
+              <div class="empty-state compact">
+                <span aria-hidden="true">＋</span>
+                <p>Adicione um alimento para ver a estimativa.</p>
+              </div>
+            </div>
+            <div class="meal-total">
+              <span>Total estimado</span>
+              <strong id="meal-total">—</strong>
+            </div>
+            <button id="save-meal" class="primary-button save-meal" type="button">
+              Salvar refeição
+            </button>
+            <p class="calculation-boundary">Os dados registrados aqui não calculam insulina.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="saved-meals" aria-labelledby="saved-meals-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Refeições salvas</p>
+            <h2 id="saved-meals-title">Seu diário alimentar</h2>
+          </div>
+          <span id="meal-total-count" class="count-badge">0</span>
+        </div>
+        <div id="meal-history" class="meal-history">
+          <div class="empty-state">
+            <span aria-hidden="true">◻</span>
+            <h3>Seu diário começa com uma refeição.</h3>
+            <p>Escolha café, almoço, lanche ou jantar e registre os itens.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="app-footer">
+        <div>
+          <strong>Seus dados, no seu dispositivo.</strong>
+          <p>Exporte ou apague os registros quando quiser.</p>
+        </div>
+        <div class="footer-actions">
+          <button id="export-data" class="quiet-button" type="button">Baixar planilha (.csv)</button>
+          <button id="export-pdf" class="quiet-button" type="button">Relatório para PDF</button>
+          <button id="clear-data" class="danger-button" type="button">Apagar dados locais</button>
+        </div>
+      </footer>
+    </main>
+
+    <dialog id="data-dialog" class="data-dialog">
+      <button id="close-data-help" class="dialog-close" type="button" aria-label="Fechar">×</button>
+      <p class="eyebrow">Privacidade</p>
+      <h2>Como este diário cuida dos dados</h2>
+      <ul>
+        <li>As medições e refeições são guardadas no navegador deste dispositivo.</li>
+        <li>Uma foto só é enviada para estimativa quando você autoriza e solicita esse processamento.</li>
+        <li>O texto de orientação médica também fica guardado neste navegador.</li>
+        <li>Você pode exportar ou apagar os dados locais a qualquer momento.</li>
+      </ul>
+      <label class="assistant-consent">
+        <input id="assistant-tools-consent" type="checkbox" />
+        <span>
+          <strong>Permitir ações do assistente neste navegador</strong>
+          <small>Opcional. Só ative se quiser que um assistente conectado ao navegador registre dados locais.</small>
+        </span>
+      </label>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
