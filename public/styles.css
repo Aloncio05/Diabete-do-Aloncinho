@@ -1206,6 +1206,27 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
 .parameters-form .secondary-button { justify-self: start; }
 .footer-actions { flex-wrap: wrap; }
 
+/* Importação: o input de arquivo fica escondido atrás do rótulo. */
+.import-button { position: relative; overflow: hidden; cursor: pointer; }
+.import-button input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.import-button:focus-within { color: var(--teal-dark); background: color-mix(in srgb, var(--teal) 10%, transparent); }
+
+.import-summary { margin-top: 6px; }
+.import-file-name { margin: 0 0 12px; color: var(--ink-muted); font-size: 0.8rem; word-break: break-all; }
+.import-list { margin: 0; padding-left: 20px; color: var(--ink-2); font-size: 0.9rem; line-height: 1.75; }
+.import-list strong { color: var(--ink); font-size: 1.05rem; }
+.import-warning {
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--below-bg);
+  color: var(--below-ink);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.import-warning em { font-style: normal; font-weight: 700; }
+.import-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
 /* ---------- responsivo ---------- */
 
 @media (max-width: 920px) {

@@ -811,6 +811,76 @@
     URL.revokeObjectURL(url);
   }
 
+  // Uma leitura já existente é a mesma data/hora com o mesmo valor.
+  function readingKey(timestamp, value) {
+    return new Date(timestamp).toISOString().slice(0, 16) + "|" + Number(value);
+  }
+
+  function prepareImport(text) {
+    var parsed = window.DiaryCsv.extractEntries(window.DiaryCsv.parseCsv(text));
+    var existing = new Set(state.readings.map(function (reading) {
+      return readingKey(reading.timestamp, reading.value);
+    }));
+
+    var newReadings = parsed.readings.filter(function (reading) {
+      var key = readingKey(reading.timestamp, reading.value);
+      if (existing.has(key)) return false;
+      existing.add(key); // duplicatas dentro do próprio arquivo também caem fora
+      return true;
+    });
+
+    var existingMeals = new Set(state.meals.map(function (meal) {
+      return new Date(meal.recordedAt).toISOString().slice(0, 16);
+    }));
+    var newCarbs = parsed.carbs.filter(function (entry) {
+      var key = new Date(entry.timestamp).toISOString().slice(0, 16);
+      if (existingMeals.has(key)) return false;
+      existingMeals.add(key);
+      return true;
+    });
+
+    return {
+      header: parsed.header,
+      skipped: parsed.skipped,
+      duplicates: (parsed.readings.length - newReadings.length) + (parsed.carbs.length - newCarbs.length),
+      readings: newReadings,
+      carbs: newCarbs
+    };
+  }
+
+  function applyImport(prepared) {
+    prepared.readings.forEach(function (reading) {
+      state.readings.push({
+        id: entryId("glicose"),
+        value: reading.value,
+        unit: "mg/dL",
+        timestamp: reading.timestamp,
+        source: "manual",
+        note: reading.note
+      });
+    });
+
+    prepared.carbs.forEach(function (entry) {
+      var hour = new Date(entry.timestamp).getHours();
+      state.meals.push({
+        id: entryId("refeicao"),
+        category: mealForHour(hour),
+        recordedAt: entry.timestamp,
+        note: entry.note || "Importado",
+        items: [{
+          id: entryId("item"),
+          name: "Carboidratos importados",
+          min: entry.grams,
+          max: entry.grams,
+          source: "rotulo"
+        }]
+      });
+    });
+
+    saveState();
+    renderAll();
+  }
+
   function exportDataAsCsv() {
     var rows = [["Tipo", "Data e hora (ISO)", "Glicemia", "Unidade", "Origem", "Observação", "Refeição", "Alimento", "Carboidratos mín. (g)", "Carboidratos máx. (g)"]];
 
@@ -1426,6 +1496,66 @@
       if (latestEstimate) clearEstimateResult();
     });
   });
+
+  var pendingImport = null;
+  var importDialog = document.getElementById("import-dialog");
+  var importFile = document.getElementById("import-file");
+
+  function closeImportDialog() {
+    importDialog.close();
+    pendingImport = null;
+    importFile.value = "";
+  }
+
+  importFile.addEventListener("change", async function () {
+    var file = importFile.files && importFile.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("Arquivo muito grande. Envie um .csv de até 5 MB.");
+      importFile.value = "";
+      return;
+    }
+
+    var summary = document.getElementById("import-summary");
+    try {
+      pendingImport = prepareImport(await file.text());
+    } catch (error) {
+      showToast("Não consegui ler esse arquivo.");
+      importFile.value = "";
+      return;
+    }
+
+    var total = pendingImport.readings.length + pendingImport.carbs.length;
+    var linhas = [
+      '<p class="import-file-name">' + escapeHtml(file.name) + "</p>",
+      '<ul class="import-list">',
+      "<li><strong>" + pendingImport.readings.length + "</strong> medições novas</li>",
+      "<li><strong>" + pendingImport.carbs.length + "</strong> registros de carboidrato novos</li>",
+      pendingImport.duplicates ? "<li>" + pendingImport.duplicates + " já estavam no diário e serão ignorados</li>" : "",
+      pendingImport.skipped ? "<li>" + pendingImport.skipped + " linhas sem data ou valor reconhecível</li>" : "",
+      "</ul>"
+    ];
+
+    if (!total) {
+      linhas.push('<p class="import-warning">Nada novo para importar. Colunas encontradas no arquivo: <em>' +
+        escapeHtml((pendingImport.header || []).join(", ").slice(0, 300)) + "</em></p>");
+    }
+
+    summary.innerHTML = linhas.join("");
+    document.getElementById("confirm-import").disabled = !total;
+    importDialog.showModal();
+  });
+
+  document.getElementById("confirm-import").addEventListener("click", function () {
+    if (!pendingImport) return;
+    var total = pendingImport.readings.length + pendingImport.carbs.length;
+    applyImport(pendingImport);
+    closeImportDialog();
+    showToast(total + " registros importados para o diário.");
+  });
+
+  document.getElementById("cancel-import").addEventListener("click", closeImportDialog);
+  document.getElementById("close-import").addEventListener("click", closeImportDialog);
 
   document.getElementById("export-data").addEventListener("click", function () {
     exportDataAsCsv();

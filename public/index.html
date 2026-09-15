@@ -13,6 +13,7 @@
     <title>Diário do Aloncinho</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
+    <script src="/csv.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -511,6 +512,10 @@
           <p>Exporte ou apague os registros quando quiser.</p>
         </div>
         <div class="footer-actions">
+          <label class="quiet-button import-button">
+            Importar do Glic (.csv)
+            <input id="import-file" type="file" accept=".csv,text/csv,text/plain" />
+          </label>
           <button id="export-data" class="quiet-button" type="button">Baixar planilha (.csv)</button>
           <button id="export-pdf" class="quiet-button" type="button">Relatório para PDF</button>
           <button id="clear-data" class="danger-button" type="button">Apagar dados locais</button>
@@ -535,6 +540,17 @@
           <small>Opcional. Só ative se quiser que um assistente conectado ao navegador registre dados locais.</small>
         </span>
       </label>
+    </dialog>
+
+    <dialog id="import-dialog" class="data-dialog">
+      <button id="close-import" class="dialog-close" type="button" aria-label="Fechar">×</button>
+      <p class="eyebrow">Importar</p>
+      <h2>Confira antes de gravar</h2>
+      <div id="import-summary" class="import-summary"></div>
+      <div class="import-actions">
+        <button id="cancel-import" class="quiet-button" type="button">Cancelar</button>
+        <button id="confirm-import" class="primary-button" type="button">Importar</button>
+      </div>
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

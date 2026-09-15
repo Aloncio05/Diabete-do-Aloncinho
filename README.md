@@ -43,7 +43,12 @@ dele. Quem não quiser isso deve usar a tabela de alimentos ou o nível pago.
 
 Nunca coloque a chave da API no navegador, no repositório ou em uma variável pública.
 
-Checagem do endpoint, sem rede e sem chave: `node scripts/test-estimate-carbs.mjs`.
+Checagens, sem rede e sem chave:
+
+```
+node scripts/test-estimate-carbs.mjs
+node scripts/test-csv.mjs
+```
 
 ## Dados
 
