@@ -7,9 +7,11 @@ const MAX_CARBOHYDRATES_GRAMS = 2_000;
 const MAX_ITEMS = 8;
 const MAX_ASSUMPTIONS = 8;
 
+// Subconjunto OpenAPI aceito pelo responseSchema do Gemini: sem
+// additionalProperties e sem anyOf. A validação real é feita em
+// normalizeModelEstimate, não aqui.
 const carbohydrateEstimateSchema = {
   type: "object",
-  additionalProperties: false,
   properties: {
     items: {
       type: "array",
@@ -17,12 +19,11 @@ const carbohydrateEstimateSchema = {
       maxItems: MAX_ITEMS,
       items: {
         type: "object",
-        additionalProperties: false,
         properties: {
           name: { type: "string" },
           portion_description: { type: "string" },
-          carbohydrates_min_g: { type: "number", minimum: 0 },
-          carbohydrates_max_g: { type: "number", minimum: 0 },
+          carbohydrates_min_g: { type: "number" },
+          carbohydrates_max_g: { type: "number" },
           confidence: {
             type: "string",
             enum: ["baixa", "média", "alta"],
@@ -37,17 +38,16 @@ const carbohydrateEstimateSchema = {
         ],
       },
     },
-    total_min_g: { type: "number", minimum: 0 },
-    total_max_g: { type: "number", minimum: 0 },
+    total_min_g: { type: "number" },
+    total_max_g: { type: "number" },
     assumptions: {
       type: "array",
       maxItems: MAX_ASSUMPTIONS,
       items: { type: "string" },
     },
     needs_confirmation: { type: "boolean" },
-    clarification_question: {
-      anyOf: [{ type: "string" }, { type: "null" }],
-    },
+    // String vazia significa "sem pergunta"; o Gemini não aceita união com null.
+    clarification_question: { type: "string" },
   },
   required: [
     "items",
@@ -120,20 +120,20 @@ function accessTokenMatches(request, configuredToken) {
 }
 
 function getOutputText(apiResponse) {
-  if (typeof apiResponse?.output_text === "string") return apiResponse.output_text;
-  if (!Array.isArray(apiResponse?.output)) return null;
+  const parts = apiResponse?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return null;
 
-  for (const output of apiResponse.output) {
-    if (!Array.isArray(output?.content)) continue;
-
-    for (const content of output.content) {
-      if (content?.type === "output_text" && typeof content.text === "string") {
-        return content.text;
-      }
-    }
+  for (const part of parts) {
+    if (typeof part?.text === "string" && part.text.trim()) return part.text;
   }
 
   return null;
+}
+
+// "data:image/jpeg;base64,AAA" -> { mimeType, data }
+function splitImageDataUrl(dataUrl) {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
+  return match ? { mimeType: match[1], data: match[2] } : null;
 }
 
 function isCarbohydrateValue(value) {
@@ -154,6 +154,8 @@ function normalizeModelEstimate(value) {
   if (!Array.isArray(value.assumptions) || value.assumptions.length > MAX_ASSUMPTIONS) return null;
   if (typeof value.needs_confirmation !== "boolean") return null;
   if (value.clarification_question !== null && typeof value.clarification_question !== "string") return null;
+  // "" e null significam a mesma coisa: nenhuma pergunta de esclarecimento.
+  const hasClarification = typeof value.clarification_question === "string" && value.clarification_question.trim() !== "";
 
   const items = [];
   for (const item of value.items) {
@@ -196,10 +198,10 @@ function normalizeModelEstimate(value) {
     assumptions.push(normalizedAssumption);
   }
 
-  const clarificationQuestion = value.clarification_question === null
-    ? null
-    : normalizeRequiredText(value.clarification_question, 300);
-  if (value.clarification_question !== null && (!clarificationQuestion || containsClinicalOrDosingText(clarificationQuestion))) return null;
+  const clarificationQuestion = hasClarification
+    ? normalizeRequiredText(value.clarification_question, 300)
+    : null;
+  if (hasClarification && (!clarificationQuestion || containsClinicalOrDosingText(clarificationQuestion))) return null;
 
   return {
     items,
@@ -227,13 +229,12 @@ async function handler(request) {
     return sendJson(405, { error: "Método não permitido." }, { Allow: "POST" });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  const model = process.env.OPENAI_MODEL?.trim();
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite";
   const accessToken = process.env.APP_ACCESS_TOKEN?.trim();
   // Só os NOMES das variáveis ausentes — nunca os valores.
   const missing = [
-    ["OPENAI_API_KEY", apiKey],
-    ["OPENAI_MODEL", model],
+    ["GEMINI_API_KEY", apiKey],
     ["APP_ACCESS_TOKEN", accessToken],
   ].filter(([, value]) => !value).map(([name]) => name);
 
@@ -261,42 +262,38 @@ async function handler(request) {
     return sendJson(400, { error: "Dados inválidos para a estimativa.", code: "invalid_input" });
   }
 
-  const content = [
-    {
-      type: "input_text",
-      text: createUserInput(description, portion, Boolean(imageDataUrl)),
-    },
-  ];
+  const parts = [{ text: createUserInput(description, portion, Boolean(imageDataUrl)) }];
   if (imageDataUrl) {
-    content.push({ type: "input_image", image_url: imageDataUrl, detail: "low" });
+    const image = splitImageDataUrl(imageDataUrl);
+    if (!image) {
+      return sendJson(400, { error: "Dados inválidos para a estimativa.", code: "invalid_input" });
+    }
+    parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
   }
 
   let upstreamResponse;
   try {
-    upstreamResponse = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        store: false,
-        instructions: assistantInstructions,
-        input: [{ role: "user", content }],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "carbohydrate_estimate",
-            strict: true,
-            schema: carbohydrateEstimateSchema,
-          },
+    upstreamResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": apiKey,
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: assistantInstructions }] },
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: carbohydrateEstimateSchema,
+          },
+        }),
+      },
+    );
   } catch {
     return sendJson(502, {
-      error: "Não foi possível concluir a estimativa agora.",
+      error: "Não foi possível falar com o serviço de estimativa.",
       code: "estimate_unavailable",
     });
   }
@@ -312,8 +309,15 @@ async function handler(request) {
   }
 
   if (!upstreamResponse.ok) {
+    // A mensagem do Google diz o que está errado (modelo inexistente, chave
+    // inválida, cota estourada). Repassar poupa adivinhação; a chave nunca vai junto.
+    const upstreamMessage = typeof upstreamBody?.error?.message === "string"
+      ? upstreamBody.error.message.slice(0, 300)
+      : "";
     return sendJson(502, {
-      error: "Não foi possível concluir a estimativa agora.",
+      error: upstreamMessage
+        ? `A estimativa falhou. O Google respondeu: ${upstreamMessage}`
+        : "Não foi possível concluir a estimativa agora.",
       code: "estimate_unavailable",
     });
   }

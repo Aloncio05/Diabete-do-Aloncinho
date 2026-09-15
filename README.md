@@ -27,13 +27,23 @@ O projeto não calcula, recomenda, confirma ou registra doses de insulina. Ele �
 
 O repositório já contém a configuração Vercel para publicar a interface em `public` e usar a função `api/estimate-carbs.js` para a estimativa de carboidratos.
 
-Para ativar a estimativa por IA, cadastre no Vercel as três variáveis listadas em `.env.example`:
+A contagem de carboidratos funciona sem nenhuma configuração: a tabela de
+alimentos com medidas caseiras roda no navegador, offline.
 
-- `OPENAI_API_KEY`: segredo da integração oficial da API, somente no servidor.
-- `OPENAI_MODEL`: modelo compatível com imagem e saída estruturada.
+A estimativa por IA é opcional e usa a API do Gemini, cujo nível gratuito não
+pede cartão. Para ativá-la, cadastre no Vercel as variáveis de `.env.example`:
+
+- `GEMINI_API_KEY`: chave do Google AI Studio, somente no servidor.
+- `GEMINI_MODEL`: opcional. Padrão `gemini-3.1-flash-lite`. Precisa aceitar
+  imagem na entrada e `responseSchema`.
 - `APP_ACCESS_TOKEN`: código privado solicitado na tela antes de cada estimativa.
 
+No nível gratuito, o Google usa o conteúdo enviado para melhorar os produtos
+dele. Quem não quiser isso deve usar a tabela de alimentos ou o nível pago.
+
 Nunca coloque a chave da API no navegador, no repositório ou em uma variável pública.
+
+Checagem do endpoint, sem rede e sem chave: `node scripts/test-estimate-carbs.mjs`.
 
 ## Dados
 
