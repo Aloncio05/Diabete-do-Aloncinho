@@ -140,7 +140,27 @@
   var assistantToolsConsent = document.getElementById("assistant-tools-consent");
 
   function blankState() {
-    return { readings: [], meals: [], medicalOrientation: { text: "", updatedAt: "" } };
+    return {
+      readings: [],
+      meals: [],
+      medicalOrientation: { text: "", updatedAt: "" },
+      parameters: { rows: [], note: "" }
+    };
+  }
+
+  function normalizeParameters(value) {
+    var rows = value && Array.isArray(value.rows) ? value.rows : [];
+    return {
+      rows: rows.slice(0, 12).map(function (row) {
+        var start = Number(row && row.start);
+        return {
+          start: Number.isInteger(start) && start >= 0 && start <= 23 ? start : 0,
+          correction: typeof row.correction === "string" ? row.correction.slice(0, 12) : "",
+          ratio: typeof row.ratio === "string" ? row.ratio.slice(0, 12) : ""
+        };
+      }).sort(function (a, b) { return a.start - b.start; }),
+      note: value && typeof value.note === "string" ? value.note.slice(0, 200) : ""
+    };
   }
 
   function loadState() {
@@ -157,7 +177,8 @@
             text: parsed.medicalOrientation.text.slice(0, 2000),
             updatedAt: typeof parsed.medicalOrientation.updatedAt === "string" ? parsed.medicalOrientation.updatedAt : ""
           }
-          : { text: "", updatedAt: "" }
+          : { text: "", updatedAt: "" },
+        parameters: normalizeParameters(parsed.parameters)
       };
     } catch (error) {
       return blankState();
@@ -665,6 +686,70 @@
       : "";
   }
 
+  function formatHour(hour) {
+    return String(hour).padStart(2, "0") + "h00";
+  }
+
+  // A faixa vai do próprio início até um minuto antes do início da seguinte.
+  function bandLabel(rows, index) {
+    var start = rows[index].start;
+    var nextStart = rows[(index + 1) % rows.length].start;
+    if (rows.length === 1) return "o dia todo";
+    return formatHour(start) + " – " + String((nextStart + 23) % 24).padStart(2, "0") + "h59";
+  }
+
+  // Última faixa cujo início já passou; antes da primeira, vale a última (vira a noite).
+  function activeBandIndex(rows) {
+    if (!rows.length) return -1;
+    var hour = new Date().getHours();
+    var active = -1;
+    rows.forEach(function (row, index) {
+      if (row.start <= hour) active = index;
+    });
+    return active === -1 ? rows.length - 1 : active;
+  }
+
+  function renderParameters() {
+    var parameters = state.parameters || { rows: [], note: "" };
+    var view = document.getElementById("parameters-view");
+    var rows = parameters.rows;
+
+    if (!rows.length) {
+      view.innerHTML = '<div class="empty-state compact"><span aria-hidden="true">◷</span>' +
+        '<p>Digite em “Editar os valores” a tabela por faixa de horário que você recebeu.</p></div>';
+    } else {
+      var active = activeBandIndex(rows);
+      view.innerHTML = '<table class="parameters-table"><thead><tr>' +
+        '<th>Faixa de horário</th><th>Fator de correção</th><th>Relação carb/insulina</th>' +
+        '</tr></thead><tbody>' +
+        rows.map(function (row, index) {
+          return '<tr' + (index === active ? ' class="is-now"' : '') + '>' +
+            '<td>' + bandLabel(rows, index) +
+            (index === active ? ' <span class="now-badge">agora</span>' : '') + '</td>' +
+            '<td>' + (row.correction ? escapeHtml(row.correction) + " mg/dL" : "—") + '</td>' +
+            '<td>' + (row.ratio ? escapeHtml(row.ratio) + " g/U" : "—") + '</td>' +
+            '</tr>';
+        }).join("") +
+        '</tbody></table>' +
+        (parameters.note ? '<p class="parameters-note">' + escapeHtml(parameters.note) + '</p>' : "");
+    }
+
+    document.getElementById("parameters-note").value = parameters.note;
+    var editor = document.getElementById("parameters-rows");
+    editor.innerHTML = rows.map(function (row, index) {
+      var hours = "";
+      for (var hour = 0; hour < 24; hour += 1) {
+        hours += '<option value="' + hour + '"' + (hour === row.start ? " selected" : "") + ">" + formatHour(hour) + "</option>";
+      }
+      return '<div class="parameter-row">' +
+        '<label><span>Começa às</span><select data-field="start" data-index="' + index + '">' + hours + '</select></label>' +
+        '<label><span>Correção (mg/dL)</span><input type="text" inputmode="decimal" maxlength="12" value="' + escapeHtml(row.correction) + '" data-field="correction" data-index="' + index + '" /></label>' +
+        '<label><span>Carb/insulina (g/U)</span><input type="text" inputmode="decimal" maxlength="12" value="' + escapeHtml(row.ratio) + '" data-field="ratio" data-index="' + index + '" /></label>' +
+        '<button class="row-remove" type="button" data-remove-parameter="' + index + '" title="Remover faixa" aria-label="Remover faixa">×</button>' +
+        '</div>';
+    }).join("");
+  }
+
   function csvValue(value) {
     var text = String(value === undefined || value === null ? "" : value);
     if (/^[=+\-@]/.test(text)) text = "'" + text;
@@ -888,6 +973,7 @@
     renderPendingItems();
     renderMeals();
     renderMedicalOrientation();
+    renderParameters();
   }
 
   function selectPeriod(days) {
@@ -1016,6 +1102,36 @@
     addEstimateItems.disabled = true;
     addEstimateItems.textContent = "Itens adicionados ao diário";
     showToast("Estimativa adicionada. Confira os itens antes de salvar a refeição.");
+  });
+
+  document.getElementById("add-parameter-row").addEventListener("click", function () {
+    var rows = state.parameters.rows;
+    rows.push({ start: rows.length ? (rows[rows.length - 1].start + 1) % 24 : 0, correction: "", ratio: "" });
+    renderParameters();
+  });
+
+  // Só atualiza o modelo em memória: re-renderizar aqui tiraria o foco do campo.
+  document.getElementById("parameters-rows").addEventListener("input", function (event) {
+    var field = event.target.dataset.field;
+    var index = Number(event.target.dataset.index);
+    if (!field || !state.parameters.rows[index]) return;
+    state.parameters.rows[index][field] = field === "start" ? Number(event.target.value) : event.target.value;
+  });
+
+  document.getElementById("parameters-rows").addEventListener("click", function (event) {
+    var index = event.target.dataset.removeParameter;
+    if (typeof index === "undefined") return;
+    state.parameters.rows.splice(Number(index), 1);
+    renderParameters();
+  });
+
+  document.getElementById("parameters-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    state.parameters.note = document.getElementById("parameters-note").value.trim().slice(0, 200);
+    state.parameters = normalizeParameters(state.parameters);
+    saveState();
+    renderParameters();
+    showToast("Tabela de referência salva neste navegador.");
   });
 
   foodTableForm.addEventListener("submit", function (event) {

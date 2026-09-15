@@ -1063,6 +1063,74 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
 .orientation-display p { margin: 0; }
 .orientation-reference-card small { display: block; margin-top: 12px; color: var(--ink-muted); font-size: 0.74rem; }
 .medical-orientation .calculation-boundary { margin-bottom: 0; }
+
+/* Tabela de referência: só exibe o que o usuário digitou. Nenhum cálculo. */
+.parameters-block { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line-soft); }
+.parameters-view { margin-top: 16px; }
+
+.parameters-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.parameters-table th {
+  padding: 0 10px 9px;
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.parameters-table td {
+  padding: 12px 10px;
+  border-top: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.parameters-table tr.is-now td {
+  background: var(--in-range-bg);
+  color: var(--in-range-ink);
+  font-weight: 700;
+}
+
+.parameters-table tr.is-now td:first-child { border-radius: 10px 0 0 10px; }
+.parameters-table tr.is-now td:last-child { border-radius: 0 10px 10px 0; }
+
+.now-badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--teal);
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.parameters-note { margin: 12px 0 0; color: var(--ink-muted); font-size: 0.8rem; line-height: 1.45; }
+
+.parameters-editor { margin-top: 16px; }
+.parameters-editor summary { cursor: pointer; color: var(--teal-dark); font-size: 0.82rem; font-weight: 800; }
+.parameters-form { display: grid; gap: 14px; margin-top: 16px; }
+.parameters-rows { display: grid; gap: 10px; }
+
+.parameter-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.parameter-row label { display: grid; gap: 6px; min-width: 0; }
+.parameter-row span { color: var(--ink-2); font-size: 0.74rem; font-weight: 800; }
+.parameter-row .row-remove { margin-bottom: 8px; }
+.add-row { justify-self: start; border: 1px dashed var(--line); }
+.parameters-form .secondary-button { justify-self: start; }
 .footer-actions { flex-wrap: wrap; }
 
 /* ---------- responsivo ---------- */
@@ -1110,6 +1178,11 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
   .trend-section .section-heading,
   .medical-orientation .section-heading { flex-direction: column; }
   .estimate-actions { align-items: stretch; }
+  .parameter-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .parameter-row label:first-child { grid-column: 1 / -1; }
+  .parameter-row .row-remove { justify-self: end; grid-column: 1 / -1; margin-bottom: 0; }
+  .parameters-table { font-size: 0.8rem; }
+  .parameters-table th, .parameters-table td { padding-left: 6px; padding-right: 6px; }
   .estimate-result-heading { flex-direction: column; }
   .estimate-items li { align-items: flex-start; flex-direction: column; gap: 4px; }
   .trend-chart-wrap,

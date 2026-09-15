@@ -237,7 +237,33 @@
             <small id="medical-orientation-date"></small>
           </article>
         </div>
-        <p class="calculation-boundary">Nenhum cálculo de dose realizado.</p>
+
+        <div class="parameters-block">
+          <div class="manual-entry-heading">
+            <div>
+              <p class="eyebrow">Tabela por faixa de horário</p>
+              <h4>Parâmetros que você recebeu</h4>
+            </div>
+            <span>Digite os valores da sua receita. A faixa da hora atual fica destacada.</span>
+          </div>
+
+          <div id="parameters-view" class="parameters-view" aria-live="polite"></div>
+
+          <details class="parameters-editor">
+            <summary>Editar os valores</summary>
+            <form id="parameters-form" class="parameters-form">
+              <div id="parameters-rows" class="parameters-rows"></div>
+              <button class="quiet-button add-row" id="add-parameter-row" type="button">+ Adicionar faixa</button>
+              <label class="field full">
+                <span>Observação <em>opcional</em></span>
+                <input id="parameters-note" type="text" maxlength="200" placeholder="Ex.: basal — 05h e 20h" />
+              </label>
+              <button class="secondary-button" type="submit">Salvar tabela</button>
+            </form>
+          </details>
+        </div>
+
+        <p class="calculation-boundary">Esta tela apenas exibe o que você digitou. Nenhum cálculo de dose é feito aqui.</p>
       </section>
 
       <section class="meal-section" aria-labelledby="meal-title">
