@@ -180,6 +180,8 @@
           ratio: typeof row.ratio === "string" ? row.ratio.slice(0, 12) : ""
         };
       }).sort(function (a, b) { return a.start - b.start; }),
+      bolus: value && typeof value.bolus === "string" ? value.bolus.slice(0, 80) : "",
+      basal: value && typeof value.basal === "string" ? value.basal.slice(0, 200) : "",
       note: value && typeof value.note === "string" ? value.note.slice(0, 200) : ""
     };
   }
@@ -762,21 +764,28 @@
         '<p>Digite em “Editar os valores” a tabela por faixa de horário que você recebeu.</p></div>';
     } else {
       var active = activeBandIndex(rows);
-      view.innerHTML = '<table class="parameters-table"><thead><tr>' +
+      var heads = [];
+      if (parameters.bolus) heads.push('<div><span>Bolus</span><strong>' + escapeHtml(parameters.bolus) + '</strong></div>');
+      if (parameters.basal) heads.push('<div><span>Basal</span><strong>' + escapeHtml(parameters.basal) + '</strong></div>');
+
+      view.innerHTML = (heads.length ? '<div class="parameters-heads">' + heads.join("") + '</div>' : "") +
+        '<table class="parameters-table"><thead><tr>' +
         '<th>Faixa de horário</th><th>Fator de correção</th><th>Relação carb/insulina</th>' +
         '</tr></thead><tbody>' +
         rows.map(function (row, index) {
           return '<tr' + (index === active ? ' class="is-now"' : '') + '>' +
             '<td>' + bandLabel(rows, index) +
             (index === active ? ' <span class="now-badge">agora</span>' : '') + '</td>' +
-            '<td>' + (row.correction ? escapeHtml(row.correction) + " mg/dL" : "—") + '</td>' +
-            '<td>' + (row.ratio ? escapeHtml(row.ratio) + " g/U" : "—") + '</td>' +
+            '<td>' + (row.correction ? escapeHtml(row.correction) + " mg/dL" : '<em class="pending">pendente</em>') + '</td>' +
+            '<td>' + (row.ratio ? escapeHtml(row.ratio) + " g/U" : '<em class="pending">pendente</em>') + '</td>' +
             '</tr>';
         }).join("") +
         '</tbody></table>' +
         (parameters.note ? '<p class="parameters-note">' + escapeHtml(parameters.note) + '</p>' : "");
     }
 
+    document.getElementById("parameters-bolus").value = parameters.bolus;
+    document.getElementById("parameters-basal").value = parameters.basal;
     document.getElementById("parameters-note").value = parameters.note;
     var editor = document.getElementById("parameters-rows");
     editor.innerHTML = rows.map(function (row, index) {
@@ -925,11 +934,16 @@
   function printableParameterRows() {
     var parameters = state.parameters || { rows: [], note: "" };
     if (!parameters.rows.length) return '<p class="meta">Nenhuma tabela de referência cadastrada.</p>';
-    return '<table><thead><tr><th>Faixa de horário</th><th>Fator de correção</th><th>Relação carboidrato/insulina</th></tr></thead><tbody>' +
+    var heads = [];
+    if (parameters.bolus) heads.push("<strong>Bolus:</strong> " + escapeHtml(parameters.bolus));
+    if (parameters.basal) heads.push("<strong>Basal:</strong> " + escapeHtml(parameters.basal));
+
+    return (heads.length ? '<p class="meta">' + heads.join(" &nbsp;·&nbsp; ") + "</p>" : "") +
+      '<table><thead><tr><th>Faixa de horário</th><th>Fator de correção</th><th>Relação carboidrato/insulina</th></tr></thead><tbody>' +
       parameters.rows.map(function (row, index) {
         return "<tr><td>" + escapeHtml(bandLabel(parameters.rows, index)) + "</td><td>" +
-          (row.correction ? escapeHtml(row.correction) + " mg/dL" : "—") + "</td><td>" +
-          (row.ratio ? escapeHtml(row.ratio) + " g/U" : "—") + "</td></tr>";
+          (row.correction ? escapeHtml(row.correction) + " mg/dL" : "pendente") + "</td><td>" +
+          (row.ratio ? escapeHtml(row.ratio) + " g/U" : "pendente") + "</td></tr>";
       }).join("") + "</tbody></table>" +
       (parameters.note ? '<p class="meta">' + escapeHtml(parameters.note) + "</p>" : "");
   }
@@ -1315,6 +1329,8 @@
 
   document.getElementById("parameters-form").addEventListener("submit", function (event) {
     event.preventDefault();
+    state.parameters.bolus = document.getElementById("parameters-bolus").value.trim().slice(0, 80);
+    state.parameters.basal = document.getElementById("parameters-basal").value.trim().slice(0, 200);
     state.parameters.note = document.getElementById("parameters-note").value.trim().slice(0, 200);
     state.parameters = normalizeParameters(state.parameters);
     saveState();

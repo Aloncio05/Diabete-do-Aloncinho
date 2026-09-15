@@ -255,9 +255,19 @@
             <form id="parameters-form" class="parameters-form">
               <div id="parameters-rows" class="parameters-rows"></div>
               <button class="quiet-button add-row" id="add-parameter-row" type="button">+ Adicionar faixa</button>
+              <div class="parameters-extra">
+                <label class="field">
+                  <span>Insulina do bolus</span>
+                  <input id="parameters-bolus" type="text" maxlength="80" placeholder="Ex.: Lispro" />
+                </label>
+                <label class="field">
+                  <span>Basal</span>
+                  <input id="parameters-basal" type="text" maxlength="200" placeholder="Ex.: Basaglar 05:00 → 6 U; 20:00 → 14 U" />
+                </label>
+              </div>
               <label class="field full">
                 <span>Observação <em>opcional</em></span>
-                <input id="parameters-note" type="text" maxlength="200" placeholder="Ex.: basal — 05h e 20h" />
+                <input id="parameters-note" type="text" maxlength="200" placeholder="Ex.: sem bolus por gordura" />
               </label>
               <button class="secondary-button" type="submit">Salvar tabela</button>
             </form>
