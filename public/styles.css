@@ -658,8 +658,13 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
 .meal-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.38fr) minmax(300px, 0.62fr);
+  align-items: start;
   gap: 18px;
 }
+
+/* O resumo acompanha a rolagem: o total e a faixa vigente ficam sempre à vista
+   enquanto se montam os itens na coluna da esquerda, que é bem mais alta. */
+.meal-summary-card { position: sticky; top: 16px; }
 
 .estimate-tag { padding: 7px 10px; color: var(--below-ink); background: var(--below-bg); font-size: 0.68rem; }
 
@@ -713,6 +718,37 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
   font-variant-numeric: tabular-nums;
 }
 .meal-total-value small { display: block; margin-top: 4px; color: var(--ink-muted); font-size: 0.74rem; }
+/* Faixa vigente ao lado do total. Exibe o que o usuário digitou; não calcula. */
+.meal-parameters {
+  margin-bottom: 14px;
+  padding: 13px 15px;
+  border: 1px solid var(--in-range-line);
+  border-radius: var(--radius-sm);
+  background: var(--in-range-bg);
+}
+
+.meal-parameters .eyebrow { margin-bottom: 10px; color: var(--in-range-ink); }
+
+.meal-parameters-values { display: flex; gap: 10px; justify-content: space-between; }
+.meal-parameters-values > div { min-width: 0; }
+.meal-parameters-values span {
+  display: block;
+  color: var(--in-range-ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+.meal-parameters-values strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--in-range-ink);
+  font-size: 1.02rem;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.meal-parameters-empty { margin: 0; color: var(--ink-muted); font-size: 0.76rem; line-height: 1.45; }
+
 .save-meal { width: 100%; }
 .calculation-boundary { margin: 11px 2px 0; color: var(--ink-muted); font-size: 0.7rem; text-align: center; }
 
@@ -1139,6 +1175,8 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace,
   .meal-workspace { grid-template-columns: 1fr; }
+  /* Em coluna única não há o que acompanhar: grudar só atrapalharia. */
+  .meal-summary-card { position: static; }
   .item-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .item-name-field { grid-column: 1 / -1; }
   .orientation-grid { grid-template-columns: 1fr; }

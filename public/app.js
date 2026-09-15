@@ -709,10 +709,31 @@
     return active === -1 ? rows.length - 1 : active;
   }
 
+  // Faixa vigente, para exibir junto do total de carboidratos sem rolar a página.
+  function renderMealParameters() {
+    var target = document.getElementById("meal-parameters");
+    var rows = (state.parameters || { rows: [] }).rows;
+    var active = activeBandIndex(rows);
+
+    if (active === -1) {
+      target.innerHTML = '<p class="meal-parameters-empty">Cadastre em “Orientação médica” a tabela que você recebeu para ela aparecer aqui.</p>';
+      return;
+    }
+
+    var row = rows[active];
+    target.innerHTML = '<p class="eyebrow">Sua tabela agora · ' + bandLabel(rows, active) + '</p>' +
+      '<div class="meal-parameters-values">' +
+      '<div><span>Correção</span><strong>' + (row.correction ? escapeHtml(row.correction) + " mg/dL" : "—") + '</strong></div>' +
+      '<div><span>Carb/insulina</span><strong>' + (row.ratio ? escapeHtml(row.ratio) + " g/U" : "—") + '</strong></div>' +
+      '</div>';
+  }
+
   function renderParameters() {
     var parameters = state.parameters || { rows: [], note: "" };
     var view = document.getElementById("parameters-view");
     var rows = parameters.rows;
+
+    renderMealParameters();
 
     if (!rows.length) {
       view.innerHTML = '<div class="empty-state compact"><span aria-hidden="true">◷</span>' +
