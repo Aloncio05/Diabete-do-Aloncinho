@@ -1,9 +1,25 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { formatarUnidades } from "@/lib/insulin-calculator";
-
-type TipoRefeicao = "cafe" | "almoco" | "lanche" | "jantar" | "ceia";
+import {
+  CHAVE_PERIODO,
+  Diario,
+  Padrao,
+  Periodo,
+  Registro,
+  TipoRefeicao,
+  dentroDoRecorte,
+  diaLocal,
+  diarioVazio,
+  gravarDiario,
+  lerDiario,
+  media,
+  novoId,
+  recorteAnterior,
+  recorteDe,
+  resumir,
+} from "@/lib/diario";
 
 type EstimateItem = {
   name: string;
@@ -71,6 +87,52 @@ function paraNumero(valor: string) {
   return Number(valor.replace(",", "."));
 }
 
+function formatarData(valor: string) {
+  const data = new Date(valor);
+
+  if (Number.isNaN(data.getTime())) return "sem data";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(data);
+}
+
+function formatarDia(valor: string) {
+  const data = /^\d{4}-\d{2}-\d{2}$/.test(valor)
+    ? new Date(`${valor}T12:00`)
+    : new Date(valor);
+
+  if (Number.isNaN(data.getTime())) return "sem data";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+  }).format(data);
+}
+
+function lerPeriodo(): Periodo {
+  const padrao: Periodo = { dias: 30, de: "", ate: "" };
+
+  if (typeof localStorage === "undefined") return padrao;
+
+  try {
+    const guardado = JSON.parse(localStorage.getItem(CHAVE_PERIODO) || "null");
+
+    if (!guardado || typeof guardado !== "object") return padrao;
+
+    return {
+      dias: Number.isFinite(Number(guardado.dias)) ? Number(guardado.dias) : 30,
+      de: typeof guardado.de === "string" ? guardado.de : "",
+      ate: typeof guardado.ate === "string" ? guardado.ate : "",
+    };
+  } catch {
+    return padrao;
+  }
+}
+
 async function arquivoParaDataUrl(file: File) {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -97,6 +159,24 @@ export default function Home() {
   const [insulinaAtiva, setInsulinaAtiva] = useState("0");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
+
+  // Histórico e painel. O localStorage só é lido depois da montagem, senão o
+  // HTML do servidor e o do navegador saem diferentes na hidratação.
+  const [diario, setDiario] = useState<Diario>(diarioVazio);
+  const [periodo, setPeriodo] = useState<Periodo>({ dias: 30, de: "", ate: "" });
+  const [salvo, setSalvo] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDiario(lerDiario());
+    setPeriodo(lerPeriodo());
+  }, []);
+
+  // Mudou algo que entra no cálculo: o registro salvo não vale mais para o que
+  // está na tela, então o botão volta a ficar disponível.
+  useEffect(() => {
+    setSalvo(false);
+  }, [glicemiaAtual, carboidratos, insulinaAtiva, tipoRefeicao]);
 
   const parametros = useMemo(
     () => PARAMETROS_REFEICAO[tipoRefeicao],
@@ -143,6 +223,43 @@ export default function Home() {
       insulinaAtiva: ativa,
     };
   }, [glicemiaAtual, carboidratos, insulinaAtiva, parametros]);
+
+  const painel = useMemo(() => {
+    const agora = Date.now();
+    const recorte = recorteDe(periodo, agora);
+    const ordenados = [...diario.registros].sort(
+      (a, b) => new Date(b.quando).getTime() - new Date(a.quando).getTime(),
+    );
+    const noPeriodo = dentroDoRecorte(ordenados, recorte);
+    const anterior = recorteAnterior(recorte, agora);
+    const mediaAnterior = anterior
+      ? media(dentroDoRecorte(ordenados, anterior).map((r) => r.glicemia))
+      : null;
+    const resumo = resumir(noPeriodo, recorte, agora);
+
+    return {
+      recorte,
+      todos: ordenados,
+      registros: noPeriodo,
+      resumo,
+      variacao:
+        resumo.glicemiaMedia !== null && mediaAnterior !== null
+          ? resumo.glicemiaMedia - Math.round(mediaAnterior)
+          : null,
+      // Do mais antigo para o mais novo, que é como o gráfico lê.
+      serie: [...noPeriodo].reverse(),
+    };
+  }, [diario.registros, periodo]);
+
+  const rotuloDoPeriodo = useMemo(() => {
+    if (periodo.de && periodo.ate) {
+      return `De ${formatarDia(periodo.de)} a ${formatarDia(periodo.ate)}`;
+    }
+    if (periodo.de) return `A partir de ${formatarDia(periodo.de)}`;
+    if (periodo.ate) return `Até ${formatarDia(periodo.ate)}`;
+    if (!periodo.dias) return "Todo o histórico";
+    return `Últimos ${periodo.dias} dias`;
+  }, [periodo]);
 
   async function analisarRefeicao() {
     setErro("");
@@ -233,6 +350,108 @@ export default function Home() {
     setEstimate(null);
     setCarboidratos("");
     setErro("");
+  }
+
+  function atualizarDiario(proximo: Diario) {
+    setDiario(proximo);
+    gravarDiario(proximo);
+  }
+
+  function atualizarPeriodo(proximo: Periodo) {
+    setPeriodo(proximo);
+    localStorage.setItem(CHAVE_PERIODO, JSON.stringify(proximo));
+  }
+
+  // O registro guarda o que já foi calculado na tela. Nada é recalculado aqui.
+  function salvarNoHistorico() {
+    if (!resultado) return;
+
+    const registro: Registro = {
+      id: novoId("registro"),
+      quando: new Date().toISOString(),
+      tipoRefeicao,
+      glicemia: paraNumero(glicemiaAtual),
+      carboidratos: paraNumero(carboidratos),
+      insulinaAtiva: resultado.insulinaAtiva,
+      dose: resultado.doseMatematica,
+      descricao: descricao.trim().slice(0, 200),
+    };
+
+    atualizarDiario({ ...diario, registros: [...diario.registros, registro] });
+    setSalvo(true);
+  }
+
+  function salvarPadrao() {
+    const carbo = paraNumero(carboidratos);
+
+    if (!Number.isFinite(carbo) || carbo < 0) {
+      setErro("Informe os carboidratos antes de salvar uma refeição padrão.");
+      return;
+    }
+
+    const sugestao = descricao.trim() || `${parametros.nome} de sempre`;
+    const nome = window.prompt("Nome da refeição padrão", sugestao);
+
+    if (nome === null) return;
+
+    if (!nome.trim()) {
+      setErro("Dê um nome para encontrar essa refeição depois.");
+      return;
+    }
+
+    const padrao: Padrao = {
+      id: novoId("padrao"),
+      nome: nome.trim().slice(0, 80),
+      tipoRefeicao,
+      descricao: descricao.trim().slice(0, 200),
+      porcao: porcao.trim().slice(0, 200),
+      carboidratos: carbo,
+      usos: 0,
+      criadoEm: new Date().toISOString(),
+      ultimoUso: "",
+    };
+
+    setErro("");
+    atualizarDiario({ ...diario, padroes: [...diario.padroes, padrao] });
+  }
+
+  // Usar a padrão só preenche os campos. O cálculo continua dependendo da
+  // glicemia que você digitar.
+  function usarPadrao(padrao: Padrao) {
+    setTipoRefeicao(padrao.tipoRefeicao);
+    setDescricao(padrao.descricao);
+    setPorcao(padrao.porcao);
+    setCarboidratos(String(padrao.carboidratos).replace(".", ","));
+    setEstimate(null);
+    setErro("");
+    setSalvo(false);
+
+    atualizarDiario({
+      ...diario,
+      padroes: diario.padroes.map((item) =>
+        item.id === padrao.id
+          ? { ...item, usos: item.usos + 1, ultimoUso: new Date().toISOString() }
+          : item,
+      ),
+    });
+  }
+
+  function removerPadrao(id: string) {
+    if (!window.confirm("Remover esta refeição padrão?")) return;
+
+    atualizarDiario({
+      ...diario,
+      padroes: diario.padroes.filter((item) => item.id !== id),
+    });
+  }
+
+  function removerRegistro(id: string) {
+    if (!window.confirm("Remover este registro do histórico?")) return;
+
+    atualizarDiario({
+      ...diario,
+      registros: diario.registros.filter((item) => item.id !== id),
+    });
   }
 
   return (
@@ -410,15 +629,44 @@ export default function Home() {
                 Foto da refeição
               </label>
 
-              <input
-                id="foto"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                  setFoto(e.target.files?.[0] || null)
-                }
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  id="foto"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setFoto(e.target.files?.[0] || null)
+                  }
+                  className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+                />
+
+                {/* capture abre a câmera direto no celular; no computador o
+                    navegador cai no seletor de arquivos sozinho. */}
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  hidden
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setFoto(e.target.files?.[0] || null)
+                  }
+                />
+
+                <button
+                  type="button"
+                  onClick={() => cameraRef.current?.click()}
+                  className="rounded-xl border border-emerald-800 bg-emerald-950/40 px-4 py-3 font-semibold text-emerald-200 transition hover:bg-emerald-900/50"
+                >
+                  Tirar foto
+                </button>
+              </div>
+
+              {foto && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Foto escolhida: {foto.name}
+                </p>
+              )}
             </div>
 
             <button
@@ -576,9 +824,409 @@ export default function Home() {
               cadastrados. Confirme com o plano prescrito antes de qualquer
               aplicação.
             </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={salvarNoHistorico}
+                disabled={salvo}
+                className="flex-1 rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {salvo ? "Salvo no histórico" : "Salvar no histórico"}
+              </button>
+
+              <button
+                type="button"
+                onClick={salvarPadrao}
+                className="flex-1 rounded-xl border border-slate-700 px-4 py-3 font-semibold text-slate-200 transition hover:bg-slate-800"
+              >
+                Salvar como refeição padrão
+              </button>
+            </div>
           </section>
         )}
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <h2 className="text-lg font-semibold">Refeições padrão</h2>
+
+          <p className="mt-2 text-sm text-slate-400">
+            O que você repete sempre. Usar uma preenche a refeição e os
+            carboidratos; a glicemia do momento continua sendo sua.
+          </p>
+
+          {diario.padroes.length === 0 ? (
+            <p className="mt-4 rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">
+              Nenhuma ainda. Calcule uma refeição e toque em &ldquo;Salvar como
+              refeição padrão&rdquo;.
+            </p>
+          ) : (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[...diario.padroes]
+                .sort((a, b) => b.usos - a.usos)
+                .map((padrao) => (
+                  <div
+                    key={padrao.id}
+                    className="rounded-xl border border-slate-700 bg-slate-950 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold">
+                          {padrao.nome}
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+                          {PARAMETROS_REFEICAO[padrao.tipoRefeicao].nome} ·{" "}
+                          {padrao.carboidratos} g
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removerPadrao(padrao.id)}
+                        aria-label={`Remover ${padrao.nome}`}
+                        className="shrink-0 rounded-lg px-2 py-1 text-slate-500 transition hover:bg-slate-800 hover:text-red-300"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="mt-2 text-xs text-slate-500">
+                      {padrao.usos > 0
+                        ? `usada ${padrao.usos}${padrao.usos === 1 ? " vez" : " vezes"}${
+                            padrao.ultimoUso
+                              ? ` · última em ${formatarDia(padrao.ultimoUso)}`
+                              : ""
+                          }`
+                        : padrao.criadoEm
+                          ? `salva em ${formatarDia(padrao.criadoEm)}`
+                          : "ainda não usada"}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => usarPadrao(padrao)}
+                      className="mt-3 w-full rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold transition hover:bg-slate-700"
+                    >
+                      Usar
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="text-lg font-semibold">Acompanhamento</h2>
+            <span className="text-sm font-semibold text-emerald-400">
+              {rotuloDoPeriodo}
+            </span>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap gap-2">
+              {[7, 30, 90, 0].map((dias) => {
+                const ativo =
+                  !periodo.de && !periodo.ate && periodo.dias === dias;
+
+                return (
+                  <button
+                    key={dias}
+                    type="button"
+                    onClick={() => atualizarPeriodo({ dias, de: "", ate: "" })}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                      ativo
+                        ? "bg-emerald-600 text-white"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {dias === 0 ? "Tudo" : `${dias} dias`}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-xs text-slate-400">
+                <span className="mb-1 block">De</span>
+
+                <input
+                  type="date"
+                  value={periodo.de}
+                  max={diaLocal(new Date())}
+                  onChange={(e) =>
+                    atualizarPeriodo({ ...periodo, de: e.target.value })
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+
+              <label className="text-xs text-slate-400">
+                <span className="mb-1 block">Até</span>
+
+                <input
+                  type="date"
+                  value={periodo.ate}
+                  max={diaLocal(new Date())}
+                  onChange={(e) =>
+                    atualizarPeriodo({ ...periodo, ate: e.target.value })
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+
+              {(periodo.de || periodo.ate) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    atualizarPeriodo({ dias: periodo.dias, de: "", ate: "" })
+                  }
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-400 transition hover:bg-slate-800"
+                >
+                  Limpar datas
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-slate-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Registros
+              </div>
+
+              <div className="mt-1 text-2xl font-bold">
+                {painel.resumo.quantidade}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {painel.resumo.registrosPorDia === null
+                  ? "nenhum no período"
+                  : `${new Intl.NumberFormat("pt-BR", {
+                      maximumFractionDigits: 1,
+                    }).format(painel.resumo.registrosPorDia)}× por dia`}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Glicemia média
+              </div>
+
+              <div className="mt-1 text-2xl font-bold">
+                {painel.resumo.glicemiaMedia ?? "—"}
+                {painel.resumo.glicemiaMedia !== null && (
+                  <span className="ml-1 text-sm font-normal text-slate-400">
+                    mg/dL
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {painel.variacao === null
+                  ? "sem período anterior para comparar"
+                  : painel.variacao === 0
+                    ? "igual ao período anterior"
+                    : `${painel.variacao > 0 ? "▲ +" : "▼ "}${painel.variacao} mg/dL vs. anterior`}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Menor e maior
+              </div>
+
+              <div className="mt-1 text-2xl font-bold">
+                {painel.resumo.glicemiaMinima === null
+                  ? "—"
+                  : `${painel.resumo.glicemiaMinima} / ${painel.resumo.glicemiaMaxima}`}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">mg/dL no período</div>
+            </div>
+
+            <div className="rounded-xl bg-slate-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Carboidratos médios
+              </div>
+
+              <div className="mt-1 text-2xl font-bold">
+                {painel.resumo.carboidratosMedios ?? "—"}
+                {painel.resumo.carboidratosMedios !== null && (
+                  <span className="ml-1 text-sm font-normal text-slate-400">
+                    g
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">por refeição</div>
+            </div>
+          </div>
+
+          <GraficoDeGlicemia registros={painel.serie} alvo={parametros.glicemiaAlvo} />
+
+          <div className="mt-6">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="font-semibold">Histórico</h3>
+              <span className="text-xs text-slate-500">
+                {painel.todos.length} registros salvos
+              </span>
+            </div>
+
+            {painel.registros.length === 0 ? (
+              <p className="mt-3 rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">
+                {painel.todos.length === 0
+                  ? "Calcule uma refeição e toque em “Salvar no histórico”."
+                  : "Nenhum registro neste período."}
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {painel.registros.map((registro) => (
+                  <li
+                    key={registro.id}
+                    className="flex items-center gap-3 rounded-xl bg-slate-950 px-4 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold">
+                        {registro.glicemia} mg/dL
+                        <span className="ml-2 font-normal text-slate-400">
+                          {registro.carboidratos} g ·{" "}
+                          {formatarUnidades(registro.dose)} U
+                        </span>
+                      </div>
+
+                      <div className="mt-1 truncate text-xs text-slate-500">
+                        {PARAMETROS_REFEICAO[registro.tipoRefeicao].nome} ·{" "}
+                        {formatarData(registro.quando)}
+                        {registro.descricao ? ` · ${registro.descricao}` : ""}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removerRegistro(registro.id)}
+                      aria-label="Remover registro"
+                      className="shrink-0 rounded-lg px-2 py-1 text-slate-500 transition hover:bg-slate-800 hover:text-red-300"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <p className="mt-4 text-xs text-slate-500">
+            O painel resume os registros salvos e não prevê resultados futuros.
+            Os dados ficam neste navegador.
+          </p>
+        </section>
       </div>
     </main>
+  );
+}
+
+// Linha da glicemia no período, com a glicemia alvo como referência. Só desenha
+// o que foi registrado.
+function GraficoDeGlicemia({
+  registros,
+  alvo,
+}: {
+  registros: Registro[];
+  alvo: number;
+}) {
+  if (registros.length < 2) {
+    return (
+      <p className="mt-4 rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">
+        Salve ao menos dois registros no período para ver a evolução.
+      </p>
+    );
+  }
+
+  const largura = 760;
+  const altura = 220;
+  const esquerda = 44;
+  const direita = 16;
+  const topo = 16;
+  const base = 30;
+  const larguraUtil = largura - esquerda - direita;
+  const alturaUtil = altura - topo - base;
+
+  const valores = registros.map((registro) => registro.glicemia);
+  const minimo = Math.max(0, Math.floor((Math.min(...valores, alvo) - 20) / 20) * 20);
+  const maximo = Math.ceil((Math.max(...valores, alvo) + 20) / 20) * 20;
+  const amplitude = maximo - minimo || 20;
+
+  const x = (indice: number) =>
+    esquerda + (larguraUtil * indice) / (registros.length - 1);
+  const y = (valor: number) => topo + ((maximo - valor) / amplitude) * alturaUtil;
+
+  return (
+    <figure className="mt-5">
+      <svg
+        viewBox={`0 0 ${largura} ${altura}`}
+        className="w-full"
+        role="img"
+        aria-label={`Evolução de ${registros.length} registros de glicemia, de ${formatarData(
+          registros[0].quando,
+        )} a ${formatarData(registros[registros.length - 1].quando)}.`}
+      >
+        {[minimo, alvo, maximo].map((valor) => (
+          <g key={valor}>
+            <line
+              x1={esquerda}
+              y1={y(valor)}
+              x2={largura - direita}
+              y2={y(valor)}
+              stroke={valor === alvo ? "#34d399" : "#1e293b"}
+              strokeDasharray={valor === alvo ? "5 5" : undefined}
+            />
+
+            <text
+              x={esquerda - 8}
+              y={y(valor) + 4}
+              textAnchor="end"
+              fill="#64748b"
+              fontSize="12"
+            >
+              {valor}
+            </text>
+          </g>
+        ))}
+
+        <polyline
+          fill="none"
+          stroke="#34d399"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={registros
+            .map((registro, indice) => `${x(indice)},${y(registro.glicemia)}`)
+            .join(" ")}
+        />
+
+        {registros.length <= 40 &&
+          registros.map((registro, indice) => (
+            <circle
+              key={registro.id}
+              cx={x(indice)}
+              cy={y(registro.glicemia)}
+              r="4"
+              fill="#34d399"
+              stroke="#0f172a"
+              strokeWidth="2"
+            >
+              <title>
+                {`${formatarData(registro.quando)}: ${registro.glicemia} mg/dL`}
+              </title>
+            </circle>
+          ))}
+      </svg>
+
+      <figcaption className="mt-2 text-xs text-slate-500">
+        Linha tracejada: glicemia alvo de {alvo} mg/dL, o valor cadastrado para a
+        refeição selecionada.
+      </figcaption>
+    </figure>
   );
 }
