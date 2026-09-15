@@ -106,10 +106,27 @@ export default function Home() {
         }),
       });
 
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        const texto = await response.text();
+
+        throw new Error(
+          `A API de carboidratos não respondeu em JSON. HTTP ${response.status}. ` +
+            `Resposta recebida: ${texto.slice(0, 120)}`
+        );
+      }
+
       const body = await response.json();
 
       if (!response.ok) {
-        throw new Error(body?.error || "Não foi possível analisar a refeição.");
+        throw new Error(
+          body?.error || `Não foi possível analisar a refeição. HTTP ${response.status}.`
+        );
+      }
+
+      if (!body?.estimate) {
+        throw new Error("A API respondeu, mas não retornou uma estimativa de carboidratos.");
       }
 
       const estimativa = body.estimate as Estimate;
