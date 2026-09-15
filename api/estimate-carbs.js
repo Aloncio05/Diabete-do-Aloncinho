@@ -230,10 +230,18 @@ async function handler(request) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   const model = process.env.OPENAI_MODEL?.trim();
   const accessToken = process.env.APP_ACCESS_TOKEN?.trim();
-  if (!apiKey || !model || !accessToken) {
+  // Só os NOMES das variáveis ausentes — nunca os valores.
+  const missing = [
+    ["OPENAI_API_KEY", apiKey],
+    ["OPENAI_MODEL", model],
+    ["APP_ACCESS_TOKEN", accessToken],
+  ].filter(([, value]) => !value).map(([name]) => name);
+
+  if (missing.length) {
     return sendJson(503, {
-      error: "A estimativa por IA ainda não foi configurada neste site.",
+      error: `Falta configurar no Vercel: ${missing.join(", ")}. Defina em Settings → Environment Variables (Production) e faça um Redeploy.`,
       code: "service_unavailable",
+      missing,
     });
   }
 
