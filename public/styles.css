@@ -103,6 +103,10 @@
 
 * { box-sizing: border-box; }
 
+/* Regras de autor com display: grid venciam o [hidden] do navegador e deixavam
+   visíveis o resultado vazio da estimativa e o aviso sobre o gráfico. */
+[hidden] { display: none !important; }
+
 html { scroll-behavior: smooth; }
 
 body {
@@ -845,7 +849,8 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
 
 /* ---------- estimativa por IA ---------- */
 
-.ai-estimate-card {
+.ai-estimate-card,
+.food-table-card {
   display: grid;
   gap: 14px;
   margin: 22px 0;
@@ -854,6 +859,70 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
   border-radius: var(--radius-md);
   background: linear-gradient(140deg, var(--teal-softer), var(--surface));
 }
+
+/* Tabela de alimentos: caminho principal da contagem, por isso vem destacada. */
+.food-table-card {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--teal) 22%, transparent);
+}
+
+.offline-badge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--teal);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.food-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) 110px;
+  align-items: end;
+  gap: 12px;
+}
+
+.food-search-field { grid-column: 1 / -1; }
+
+.food-result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  grid-column: 1 / -1;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.food-result > span { color: var(--ink-muted); font-size: 0.78rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.food-result strong {
+  color: var(--teal-dark);
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.food-form .primary-button { grid-column: 1 / -1; }
+.food-note { margin: 0; color: var(--ink-muted); font-size: 0.75rem; line-height: 1.45; }
+
+.repeat-meal {
+  position: absolute;
+  right: 44px;
+  bottom: 8px;
+  border: 0;
+  padding: 6px 10px;
+  border-radius: 9px;
+  color: var(--teal-dark);
+  background: var(--teal-soft);
+  font-size: 0.72rem;
+  font-weight: 800;
+  transition: background 140ms ease;
+}
+
+.repeat-meal:hover { background: color-mix(in srgb, var(--teal) 26%, var(--teal-soft)); }
 
 .ai-estimate-heading,
 .estimate-actions,
@@ -1027,7 +1096,9 @@ input[type="checkbox"] { min-height: auto; accent-color: var(--teal); }
   .meal-history { grid-template-columns: 1fr 1fr; }
   .entry-form,
   .item-form,
-  .estimate-form { grid-template-columns: 1fr; }
+  .estimate-form,
+  .food-form { grid-template-columns: 1fr; }
+  .repeat-meal { right: 40px; }
   .item-name-field { grid-column: auto; }
   .full { grid-column: auto; }
   .photo-controls { grid-template-columns: 1fr; }

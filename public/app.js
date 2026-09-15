@@ -23,8 +23,82 @@
     descricao: "Descrição",
     rotulo: "Rótulo",
     foto: "Foto local",
-    ia: "Estimativa por IA"
+    ia: "Estimativa por IA",
+    tabela: "Tabela de alimentos"
   };
+
+  // Carboidratos (g) por medida caseira — valores de referência de contagem.
+  // Porções variam; o rótulo do produto, quando existe, é sempre mais exato.
+  var foods = [
+    { name: "Arroz branco cozido", measures: [["colher de sopa cheia", 6], ["escumadeira", 28], ["xícara (chá)", 40]] },
+    { name: "Arroz integral cozido", measures: [["colher de sopa cheia", 6], ["escumadeira", 26]] },
+    { name: "Feijão cozido (grão e caldo)", measures: [["concha média", 14], ["colher de sopa", 5]] },
+    { name: "Macarrão cozido", measures: [["pegador", 28], ["colher de sopa", 7], ["prato raso", 55]] },
+    { name: "Batata cozida", measures: [["unidade média", 17], ["colher de sopa", 5]] },
+    { name: "Purê de batata", measures: [["colher de sopa", 6]] },
+    { name: "Batata frita", measures: [["porção pequena", 30], ["colher de sopa", 7]] },
+    { name: "Mandioca (aipim) cozida", measures: [["pedaço médio", 20], ["colher de sopa", 7]] },
+    { name: "Farofa", measures: [["colher de sopa", 10]] },
+    { name: "Polenta cozida", measures: [["fatia média", 14]] },
+    { name: "Pão francês", measures: [["unidade", 28], ["metade", 14]] },
+    { name: "Pão de forma", measures: [["fatia", 13]] },
+    { name: "Pão integral", measures: [["fatia", 12]] },
+    { name: "Pão de queijo", measures: [["unidade pequena", 12], ["unidade grande", 24]] },
+    { name: "Tapioca", measures: [["unidade média", 30]] },
+    { name: "Cuscuz de milho", measures: [["fatia média", 25]] },
+    { name: "Torrada", measures: [["unidade", 6]] },
+    { name: "Biscoito água e sal", measures: [["unidade", 4]] },
+    { name: "Biscoito recheado", measures: [["unidade", 10]] },
+    { name: "Bolo simples", measures: [["fatia média", 30]] },
+    { name: "Aveia em flocos", measures: [["colher de sopa", 9]] },
+    { name: "Granola", measures: [["colher de sopa", 10]] },
+    { name: "Cereal matinal", measures: [["xícara (chá)", 24]] },
+    { name: "Leite integral", measures: [["copo (200 ml)", 9], ["xícara (chá)", 9]] },
+    { name: "Leite desnatado", measures: [["copo (200 ml)", 10]] },
+    { name: "Iogurte natural", measures: [["pote (170 g)", 9]] },
+    { name: "Iogurte de frutas", measures: [["pote (170 g)", 20]] },
+    { name: "Achocolatado em pó", measures: [["colher de sopa", 12]] },
+    { name: "Queijo (mussarela, prato)", measures: [["fatia", 1]] },
+    { name: "Requeijão", measures: [["colher de sopa", 2]] },
+    { name: "Manteiga", measures: [["ponta de faca", 0]] },
+    { name: "Ovo", measures: [["unidade", 0]] },
+    { name: "Carne, frango ou peixe grelhado", measures: [["porção", 0]] },
+    { name: "Presunto ou peito de peru", measures: [["fatia", 0]] },
+    { name: "Banana", measures: [["unidade média", 26], ["unidade pequena", 18]] },
+    { name: "Maçã", measures: [["unidade média", 20]] },
+    { name: "Laranja", measures: [["unidade média", 15]] },
+    { name: "Mamão", measures: [["fatia média", 15]] },
+    { name: "Melancia", measures: [["fatia média", 15]] },
+    { name: "Melão", measures: [["fatia média", 12]] },
+    { name: "Uva", measures: [["10 unidades", 15]] },
+    { name: "Manga", measures: [["unidade pequena", 25]] },
+    { name: "Abacaxi", measures: [["fatia média", 12]] },
+    { name: "Morango", measures: [["xícara (chá)", 11]] },
+    { name: "Pera", measures: [["unidade média", 21]] },
+    { name: "Suco de laranja natural", measures: [["copo (200 ml)", 20]] },
+    { name: "Suco de caixinha", measures: [["copo (200 ml)", 22]] },
+    { name: "Refrigerante comum", measures: [["copo (200 ml)", 21], ["lata (350 ml)", 37]] },
+    { name: "Refrigerante zero", measures: [["copo (200 ml)", 0]] },
+    { name: "Café sem açúcar", measures: [["xícara", 0]] },
+    { name: "Açúcar", measures: [["colher de chá", 5], ["colher de sopa", 12]] },
+    { name: "Mel", measures: [["colher de sopa", 17]] },
+    { name: "Chocolate ao leite", measures: [["barra pequena (25 g)", 14]] },
+    { name: "Sorvete", measures: [["bola", 15]] },
+    { name: "Pudim", measures: [["fatia média", 30]] },
+    { name: "Pizza", measures: [["fatia", 30]] },
+    { name: "Lasanha", measures: [["pedaço médio", 30]] },
+    { name: "Salgado assado", measures: [["unidade", 25]] },
+    { name: "Coxinha", measures: [["unidade", 20]] },
+    { name: "Pipoca", measures: [["xícara (chá)", 6]] },
+    { name: "Salada de folhas", measures: [["prato", 2]] },
+    { name: "Tomate", measures: [["unidade média", 3]] },
+    { name: "Cenoura cozida", measures: [["colher de sopa", 2]] },
+    { name: "Abobrinha ou chuchu cozido", measures: [["colher de sopa", 2]] },
+    { name: "Milho verde", measures: [["colher de sopa", 5]] },
+    { name: "Ervilha", measures: [["colher de sopa", 4]] },
+    { name: "Feijoada", measures: [["concha média", 15]] },
+    { name: "Strogonoff", measures: [["colher de sopa", 3]] }
+  ];
 
   var state = loadState();
 
@@ -56,6 +130,12 @@
   var medicalOrientationInput = document.getElementById("medical-orientation-input");
   var medicalOrientationDisplay = document.getElementById("medical-orientation-display");
   var medicalOrientationDate = document.getElementById("medical-orientation-date");
+  var foodTableForm = document.getElementById("food-table-form");
+  var foodSearch = document.getElementById("food-search");
+  var foodOptions = document.getElementById("food-options");
+  var foodMeasure = document.getElementById("food-measure");
+  var foodQuantity = document.getElementById("food-quantity");
+  var foodCarbs = document.getElementById("food-carbs");
   var dataDialog = document.getElementById("data-dialog");
   var assistantToolsConsent = document.getElementById("assistant-tools-consent");
 
@@ -462,7 +542,7 @@
       throw new Error("Informe o alimento ou a refeição e a porção que vai consumir.");
     }
     if (!accessToken) {
-      throw new Error("Informe o código de acesso em “Acesso privado do site”.");
+      throw new Error("A estimativa por IA precisa do código definido em APP_ACCESS_TOKEN no Vercel. Enquanto isso, use a tabela de alimentos acima.");
     }
 
     // A foto é o único dado que exige autorização explícita; o texto você digitou e enviou.
@@ -796,6 +876,7 @@
         '<p>' + (meal.note ? escapeHtml(meal.note) : "Itens confirmados no diário.") + '</p>' +
         '<span class="saved-meal-total">' + formatCarbTotal(total.min, total.max) + ' de carboidratos' +
         '<small>faixa: ' + formatRange(total.min, total.max) + '</small></span>' +
+        '<button class="repeat-meal" type="button" data-repeat-meal="' + escapeHtml(meal.id) + '" title="Copiar os itens para a refeição atual">Repetir</button>' +
         '<button class="row-remove" type="button" data-remove-meal="' + escapeHtml(meal.id) + '" title="Remover refeição" aria-label="Remover refeição">×</button>' +
         '</article>';
     }).join("");
@@ -815,6 +896,45 @@
       chip.classList.toggle("active", Number(chip.dataset.period) === periodDays);
     });
     renderDashboard();
+  }
+
+  function findFood(name) {
+    var normalized = String(name || "").trim().toLowerCase();
+    if (!normalized) return null;
+    return foods.find(function (food) { return food.name.toLowerCase() === normalized; }) || null;
+  }
+
+  function currentFoodSelection() {
+    var food = findFood(foodSearch.value);
+    if (!food) return null;
+    var measure = food.measures[Number(foodMeasure.value)];
+    var quantity = Number(foodQuantity.value);
+    if (!measure || !Number.isFinite(quantity) || quantity <= 0 || quantity > 50) return null;
+    return {
+      food: food,
+      measure: measure,
+      quantity: quantity,
+      grams: Math.round(measure[1] * quantity * 10) / 10
+    };
+  }
+
+  function renderFoodPicker() {
+    var food = findFood(foodSearch.value);
+
+    if (food && foodMeasure.dataset.food !== food.name) {
+      foodMeasure.dataset.food = food.name;
+      foodMeasure.innerHTML = food.measures.map(function (measure, index) {
+        return '<option value="' + index + '">' + escapeHtml(measure[0]) + ' · ' + formatGrams(measure[1]) + '</option>';
+      }).join("");
+      foodMeasure.disabled = false;
+    } else if (!food && foodMeasure.dataset.food) {
+      delete foodMeasure.dataset.food;
+      foodMeasure.innerHTML = '<option value="">Escolha o alimento</option>';
+      foodMeasure.disabled = true;
+    }
+
+    var selection = currentFoodSelection();
+    foodCarbs.textContent = selection ? formatGrams(selection.grams) : "—";
   }
 
   function mealForHour(hour) {
@@ -898,6 +1018,40 @@
     showToast("Estimativa adicionada. Confira os itens antes de salvar a refeição.");
   });
 
+  foodTableForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var selection = currentFoodSelection();
+    if (!selection) {
+      showToast("Escolha um alimento da lista e a medida caseira.");
+      return;
+    }
+
+    var quantityText = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(selection.quantity);
+    var label = selection.quantity === 1
+      ? selection.food.name + " (" + selection.measure[0] + ")"
+      : selection.food.name + " (" + quantityText + " × " + selection.measure[0] + ")";
+
+    pendingItems.push({
+      id: entryId("item"),
+      name: label.slice(0, 80),
+      min: selection.grams,
+      max: selection.grams,
+      source: "tabela"
+    });
+
+    foodSearch.value = "";
+    foodQuantity.value = "1";
+    renderFoodPicker();
+    renderPendingItems();
+    showToast(selection.food.name + " adicionado à refeição.");
+    foodSearch.focus();
+  });
+
+  [foodSearch, foodMeasure, foodQuantity].forEach(function (field) {
+    field.addEventListener("input", renderFoodPicker);
+    field.addEventListener("change", renderFoodPicker);
+  });
+
   itemForm.addEventListener("submit", function (event) {
     event.preventDefault();
     var min = Number(itemMin.value);
@@ -937,6 +1091,25 @@
   });
 
   document.getElementById("meal-history").addEventListener("click", function (event) {
+    var repeatId = event.target.dataset.repeatMeal;
+    if (repeatId) {
+      var meal = state.meals.find(function (saved) { return saved.id === repeatId; });
+      if (!meal) return;
+      (meal.items || []).forEach(function (item) {
+        pendingItems.push({
+          id: entryId("item"),
+          name: item.name,
+          min: item.min,
+          max: item.max,
+          source: item.source
+        });
+      });
+      renderPendingItems();
+      showToast("Itens copiados. Confira e salve como " + mealLabels[selectedCategory] + ".");
+      document.querySelector(".meal-workspace").scrollIntoView({ block: "start" });
+      return;
+    }
+
     var id = event.target.dataset.removeMeal;
     if (!id) return;
     if (!window.confirm("Remover esta refeição do diário?")) return;
@@ -1159,6 +1332,10 @@
   });
 
   var storedPeriod = localStorage.getItem(PERIOD_KEY);
+  foodOptions.innerHTML = foods.map(function (food) {
+    return '<option value="' + escapeHtml(food.name) + '"></option>';
+  }).join("");
+  renderFoodPicker();
   glucoseTime.value = localDateTimeValue(new Date());
   applyStoredToken();
   selectMeal(mealForHour(new Date().getHours()));

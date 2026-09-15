@@ -282,11 +282,49 @@
               <span class="estimate-tag">Estimativa de carboidratos</span>
             </div>
 
+            <section class="food-table-card" aria-labelledby="food-table-title">
+              <div class="ai-estimate-heading">
+                <div>
+                  <p class="eyebrow">Tabela de alimentos</p>
+                  <h4 id="food-table-title">Escolha o alimento e a medida</h4>
+                </div>
+                <span class="offline-badge">funciona offline</span>
+              </div>
+              <p class="ai-estimate-copy">Valores de referência por medida caseira. Não depende de internet, de IA nem do código de acesso.</p>
+
+              <form id="food-table-form" class="food-form">
+                <label class="field food-search-field">
+                  <span>Alimento</span>
+                  <input id="food-search" type="text" list="food-options" autocomplete="off" maxlength="80" placeholder="Digite: arroz, pão, banana…" />
+                  <datalist id="food-options"></datalist>
+                </label>
+                <label class="field">
+                  <span>Medida caseira</span>
+                  <select id="food-measure" disabled>
+                    <option value="">Escolha o alimento</option>
+                  </select>
+                </label>
+                <label class="field food-quantity-field">
+                  <span>Quantas</span>
+                  <div class="number-input small">
+                    <input id="food-quantity" type="number" min="0.25" max="50" step="0.25" value="1" inputmode="decimal" />
+                    <b>×</b>
+                  </div>
+                </label>
+                <div class="food-result">
+                  <span>Carboidratos</span>
+                  <strong id="food-carbs">—</strong>
+                </div>
+                <button class="primary-button" id="add-food" type="submit">Adicionar à refeição</button>
+              </form>
+              <p class="food-note">Porções caseiras variam. Se você tiver o rótulo do produto, ele é sempre mais exato que a tabela.</p>
+            </section>
+
             <section class="ai-estimate-card" aria-labelledby="ai-estimate-title">
               <div class="ai-estimate-heading">
                 <div>
                   <p class="eyebrow">Assistente de carboidratos</p>
-                  <h4 id="ai-estimate-title">Descreva e informe a porção</h4>
+                  <h4 id="ai-estimate-title">Não achou na tabela? Descreva o prato</h4>
                 </div>
                 <span class="ai-badge">IA com confirmação</span>
               </div>
