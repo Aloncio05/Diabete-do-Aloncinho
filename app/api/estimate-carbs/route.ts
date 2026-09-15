@@ -38,7 +38,7 @@ function splitImage(dataUrl: string) {
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
 
   if (!apiKey) {
     return json(503, {
