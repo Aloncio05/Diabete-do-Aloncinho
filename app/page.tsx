@@ -1,4 +1,4 @@
-
+"use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
 import { formatarUnidades } from "@/lib/insulin-calculator";
