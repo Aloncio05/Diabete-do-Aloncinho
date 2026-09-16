@@ -20,6 +20,9 @@ export type Registro = {
   tipoRefeicao: TipoRefeicao;
   glicemia: number;
   carboidratos: number;
+  // null quando o registro é anterior às calorias, ou quando a estimativa não
+  // trouxe o valor. Zero é uma resposta legítima; ausência não é.
+  calorias: number | null;
   insulinaAtiva: number;
   dose: number;
   descricao: string;
@@ -32,6 +35,7 @@ export type Padrao = {
   descricao: string;
   porcao: string;
   carboidratos: number;
+  calorias: number | null;
   usos: number;
   criadoEm: string;
   ultimoUso: string;
@@ -75,6 +79,15 @@ function numero(valor: unknown) {
   return Number.isFinite(convertido) ? convertido : null;
 }
 
+// Calorias entraram depois: registro antigo não tem o campo, e isso não o
+// invalida. Fora da faixa plausível também vira ausência, não zero.
+function calorias(valor: unknown) {
+  if (valor === null || valor === undefined || valor === "") return null;
+  const convertido = numero(valor);
+  if (convertido === null || convertido < 0 || convertido > 20000) return null;
+  return Math.round(convertido);
+}
+
 function tipoValido(valor: unknown): TipoRefeicao {
   return TIPOS_REFEICAO.includes(valor as TipoRefeicao)
     ? (valor as TipoRefeicao)
@@ -112,6 +125,7 @@ export function normalizarRegistros(valor: unknown): Registro[] {
         tipoRefeicao: tipoValido(bruto.tipoRefeicao),
         glicemia,
         carboidratos,
+        calorias: calorias(bruto.calorias),
         insulinaAtiva: ativa !== null && ativa >= 0 ? ativa : 0,
         dose: dose !== null && dose >= 0 ? dose : 0,
         descricao: texto(bruto.descricao, 200),
@@ -142,6 +156,7 @@ export function normalizarPadroes(valor: unknown): Padrao[] {
         descricao: texto(bruto.descricao, 200),
         porcao: texto(bruto.porcao, 200),
         carboidratos,
+        calorias: calorias(bruto.calorias),
         usos: usos !== null && usos > 0 ? Math.floor(usos) : 0,
         criadoEm: isoOuVazio(bruto.criadoEm),
         ultimoUso: isoOuVazio(bruto.ultimoUso),
@@ -239,6 +254,12 @@ export type Resumo = {
   glicemiaMinima: number | null;
   glicemiaMaxima: number | null;
   carboidratosMedios: number | null;
+  // Média sobre os registros que têm calorias, e quantos são — para a tela
+  // poder dizer que a média não cobre o período inteiro.
+  caloriasMedias: number | null;
+  caloriasPorDia: number | null;
+  registrosComCalorias: number;
+  diasComCalorias: number;
   registrosPorDia: number | null;
 };
 
@@ -268,6 +289,13 @@ export function resumir(registros: Registro[], recorte: Recorte, agora = Date.no
   const glicemias = registros.map((registro) => registro.glicemia);
   const carboidratos = registros.map((registro) => registro.carboidratos);
   const dias = diasCobertos(recorte, registros, agora);
+  const registrosComCalorias = registros.filter((registro) => registro.calorias !== null);
+  const comCalorias = registrosComCalorias.map((registro) => registro.calorias as number);
+  // Dividir pelos dias do recorte daria um número enganoso: quem registrou uma
+  // refeição em 30 dias veria "19 kcal por dia". Só contam os dias registrados.
+  const diasComCalorias = new Set(
+    registrosComCalorias.map((registro) => diaLocal(registro.quando)),
+  ).size;
 
   return {
     quantidade: registros.length,
@@ -275,6 +303,12 @@ export function resumir(registros: Registro[], recorte: Recorte, agora = Date.no
     glicemiaMinima: glicemias.length ? Math.min(...glicemias) : null,
     glicemiaMaxima: glicemias.length ? Math.max(...glicemias) : null,
     carboidratosMedios: carboidratos.length ? Math.round(media(carboidratos)!) : null,
+    caloriasMedias: comCalorias.length ? Math.round(media(comCalorias)!) : null,
+    caloriasPorDia: diasComCalorias
+      ? Math.round(comCalorias.reduce((soma, valor) => soma + valor, 0) / diasComCalorias)
+      : null,
+    registrosComCalorias: comCalorias.length,
+    diasComCalorias,
     registrosPorDia: dias && registros.length ? registros.length / dias : null,
   };
 }

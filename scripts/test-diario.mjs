@@ -114,6 +114,10 @@ assert.deepEqual(vazio, {
   glicemiaMinima: null,
   glicemiaMaxima: null,
   carboidratosMedios: null,
+  caloriasMedias: null,
+  caloriasPorDia: null,
+  registrosComCalorias: 0,
+  diasComCalorias: 0,
   registrosPorDia: null,
 });
 
@@ -122,7 +126,83 @@ assert.equal(diasCobertos(recorteDe({ dias: 7, de: "", ate: "" }, agora), emDias
 assert.equal(diasCobertos(recorteDe({ dias: 30, de: "2026-09-15", ate: "2026-09-15" }, agora), emDias, agora), 1);
 assert.equal(diasCobertos(recorteDe({ dias: 0, de: "", ate: "" }, agora), [], agora), 0);
 
-// 12. Utilitários.
+// 12. Calorias: ausência não é zero, e registro antigo sem o campo continua válido.
+const comCalorias = normalizarRegistros([
+  registro({ calorias: 450 }),
+  registro({ calorias: 0 }),
+  registro({}), // anterior às calorias
+  registro({ calorias: "nada" }),
+  registro({ calorias: -10 }),
+  registro({ calorias: 99999 }),
+  registro({ calorias: 320.4 }),
+]);
+assert.equal(comCalorias.length, 7, "nenhum registro é descartado por causa da caloria");
+assert.deepEqual(
+  comCalorias.map((r) => r.calorias),
+  [450, 0, null, null, null, null, 320],
+  "zero vale; inválido e fora de faixa viram ausência; decimal arredonda",
+);
+
+// 13. A média por refeição usa só quem tem o dado; a média por dia divide pelos
+// dias que têm registro, não pelos dias do recorte.
+const recorteDeDoisDias = recorteDe({ dias: 2, de: "", ate: "" }, agora);
+const resumoComCalorias = resumir(
+  normalizarRegistros([
+    registro({ quando: new Date(agora - 3600000).toISOString(), calorias: 600 }),
+    registro({ quando: new Date(agora - 7200000).toISOString(), calorias: 400 }),
+    registro({ quando: new Date(agora - 10800000).toISOString() }), // sem caloria
+  ]),
+  recorteDeDoisDias,
+  agora,
+);
+assert.equal(resumoComCalorias.quantidade, 3);
+assert.equal(resumoComCalorias.registrosComCalorias, 2);
+assert.equal(resumoComCalorias.diasComCalorias, 1, "as duas refeições são do mesmo dia");
+assert.equal(resumoComCalorias.caloriasMedias, 500, "(600+400)/2 refeições");
+assert.equal(resumoComCalorias.caloriasPorDia, 1000, "(600+400)/1 dia registrado");
+
+// Uma refeição num recorte longo não pode virar uma média por dia minúscula.
+const umDiaEmTrintaDias = resumir(
+  normalizarRegistros([
+    registro({ quando: new Date(agora - 3600000).toISOString(), calorias: 555 }),
+  ]),
+  recorteDe({ dias: 30, de: "", ate: "" }, agora),
+  agora,
+);
+assert.equal(umDiaEmTrintaDias.diasComCalorias, 1);
+assert.equal(umDiaEmTrintaDias.caloriasPorDia, 555, "não dilui pelos 30 dias do recorte");
+
+// Dias diferentes somam e dividem pelo número de dias com registro.
+const doisDias = resumir(
+  normalizarRegistros([
+    registro({ quando: new Date(agora - 3600000).toISOString(), calorias: 600 }),
+    registro({ quando: new Date(agora - 30 * 3600000).toISOString(), calorias: 400 }),
+  ]),
+  recorteDe({ dias: 30, de: "", ate: "" }, agora),
+  agora,
+);
+assert.equal(doisDias.diasComCalorias, 2);
+assert.equal(doisDias.caloriasPorDia, 500, "(600+400)/2 dias");
+
+// Nenhum registro com caloria: nada de média, em vez de zero.
+const semNenhuma = resumir(
+  normalizarRegistros([registro({}), registro({})]),
+  recorteDeDoisDias,
+  agora,
+);
+assert.equal(semNenhuma.caloriasMedias, null);
+assert.equal(semNenhuma.caloriasPorDia, null);
+assert.equal(semNenhuma.registrosComCalorias, 0);
+assert.equal(semNenhuma.diasComCalorias, 0);
+
+// 14. Refeição padrão também guarda caloria, e a ausência dela não invalida.
+const padroesComCalorias = normalizarPadroes([
+  { nome: "Com caloria", carboidratos: 60, calorias: 520 },
+  { nome: "Sem caloria", carboidratos: 60 },
+]);
+assert.deepEqual(padroesComCalorias.map((p) => p.calorias), [520, null]);
+
+// 15. Utilitários.
 assert.equal(media([100, 200]), 150);
 assert.equal(media([]), null);
 assert.equal(diaLocal(new Date(2026, 8, 15, 23)), "2026-09-15", "usa o dia local, não o UTC");

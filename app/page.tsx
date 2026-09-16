@@ -26,12 +26,16 @@ type EstimateItem = {
   portion: string;
   min_g: number;
   max_g: number;
+  kcal?: number;
 };
 
 type Estimate = {
   items: EstimateItem[];
   total_min_g: number;
   total_max_g: number;
+  // Opcional de propósito: se a IA não trouxer as calorias, a estimativa de
+  // carboidratos continua valendo em vez de falhar inteira.
+  total_kcal?: number;
   observation?: string;
 };
 
@@ -156,6 +160,7 @@ export default function Home() {
   const [foto, setFoto] = useState<File | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [carboidratos, setCarboidratos] = useState("");
+  const [calorias, setCalorias] = useState("");
   const [insulinaAtiva, setInsulinaAtiva] = useState("0");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -176,7 +181,7 @@ export default function Home() {
   // está na tela, então o botão volta a ficar disponível.
   useEffect(() => {
     setSalvo(false);
-  }, [glicemiaAtual, carboidratos, insulinaAtiva, tipoRefeicao]);
+  }, [glicemiaAtual, carboidratos, calorias, insulinaAtiva, tipoRefeicao]);
 
   const parametros = useMemo(
     () => PARAMETROS_REFEICAO[tipoRefeicao],
@@ -334,6 +339,10 @@ export default function Home() {
         2;
 
       setCarboidratos(medio.toFixed(1).replace(".", ","));
+
+      const kcal = Number(estimativa.total_kcal);
+
+      setCalorias(Number.isFinite(kcal) && kcal >= 0 ? String(Math.round(kcal)) : "");
     } catch (error) {
       setErro(
         error instanceof Error
@@ -349,7 +358,15 @@ export default function Home() {
     setTipoRefeicao(valor as TipoRefeicao);
     setEstimate(null);
     setCarboidratos("");
+    setCalorias("");
     setErro("");
+  }
+
+  // "" significa que não há caloria para este registro, e não zero.
+  function caloriasInformadas() {
+    if (!calorias.trim()) return null;
+    const valor = paraNumero(calorias);
+    return Number.isFinite(valor) && valor >= 0 ? Math.round(valor) : null;
   }
 
   function atualizarDiario(proximo: Diario) {
@@ -372,6 +389,7 @@ export default function Home() {
       tipoRefeicao,
       glicemia: paraNumero(glicemiaAtual),
       carboidratos: paraNumero(carboidratos),
+      calorias: caloriasInformadas(),
       insulinaAtiva: resultado.insulinaAtiva,
       dose: resultado.doseMatematica,
       descricao: descricao.trim().slice(0, 200),
@@ -406,6 +424,7 @@ export default function Home() {
       descricao: descricao.trim().slice(0, 200),
       porcao: porcao.trim().slice(0, 200),
       carboidratos: carbo,
+      calorias: caloriasInformadas(),
       usos: 0,
       criadoEm: new Date().toISOString(),
       ultimoUso: "",
@@ -422,6 +441,7 @@ export default function Home() {
     setDescricao(padrao.descricao);
     setPorcao(padrao.porcao);
     setCarboidratos(String(padrao.carboidratos).replace(".", ","));
+    setCalorias(padrao.calorias === null ? "" : String(padrao.calorias));
     setEstimate(null);
     setErro("");
     setSalvo(false);
@@ -711,6 +731,12 @@ export default function Home() {
 
                   <div className="mt-2 text-sm">
                     {item.min_g}–{item.max_g} g de carboidratos
+                    {Number.isFinite(Number(item.kcal)) && (
+                      <span className="text-slate-400">
+                        {" · "}
+                        {Math.round(Number(item.kcal))} kcal
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -724,6 +750,12 @@ export default function Home() {
               <div className="mt-1 text-2xl font-bold">
                 {estimate.total_min_g}–{estimate.total_max_g} g
               </div>
+
+              {Number.isFinite(Number(estimate.total_kcal)) && (
+                <div className="mt-1 text-sm text-emerald-200">
+                  {Math.round(Number(estimate.total_kcal))} kcal no total
+                </div>
+              )}
 
               {estimate.observation && (
                 <p className="mt-2 text-sm text-slate-300">
@@ -752,6 +784,30 @@ export default function Home() {
                 O valor médio da estimativa é preenchido
                 automaticamente. Ajuste se você souber a quantidade
                 real.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label
+                htmlFor="calorias"
+                className="mb-2 block text-sm font-medium"
+              >
+                Calorias (kcal)
+              </label>
+
+              <input
+                id="calorias"
+                inputMode="numeric"
+                value={calorias}
+                onChange={(e) => setCalorias(e.target.value)}
+                placeholder="Ex.: 520"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
+              />
+
+              <p className="mt-2 text-xs text-slate-500">
+                Vem da estimativa e serve só para o histórico. As calorias não
+                entram no cálculo da dose. Deixe em branco se não quiser
+                registrar.
               </p>
             </div>
 
@@ -850,8 +906,8 @@ export default function Home() {
           <h2 className="text-lg font-semibold">Refeições padrão</h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            O que você repete sempre. Usar uma preenche a refeição e os
-            carboidratos; a glicemia do momento continua sendo sua.
+            O que você repete sempre. Usar uma preenche a refeição, os
+            carboidratos e as calorias; a glicemia do momento continua sendo sua.
           </p>
 
           {diario.padroes.length === 0 ? (
@@ -877,6 +933,9 @@ export default function Home() {
                         <div className="mt-1 text-xs text-slate-500">
                           {PARAMETROS_REFEICAO[padrao.tipoRefeicao].nome} ·{" "}
                           {padrao.carboidratos} g
+                          {padrao.calorias !== null
+                            ? ` · ${padrao.calorias} kcal`
+                            : ""}
                         </div>
                       </div>
 
@@ -989,7 +1048,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-xl bg-slate-800 p-4">
               <div className="text-xs uppercase tracking-wide text-slate-400">
                 Registros
@@ -1061,6 +1120,50 @@ export default function Home() {
 
               <div className="mt-1 text-xs text-slate-500">por refeição</div>
             </div>
+
+            <div className="rounded-xl bg-slate-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Calorias médias
+              </div>
+
+              <div className="mt-1 text-2xl font-bold">
+                {painel.resumo.caloriasMedias ?? "—"}
+                {painel.resumo.caloriasMedias !== null && (
+                  <span className="ml-1 text-sm font-normal text-slate-400">
+                    kcal
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {painel.resumo.caloriasMedias === null
+                  ? "nenhum registro com calorias"
+                  : `por refeição, em ${painel.resumo.registrosComCalorias} de ${painel.resumo.quantidade}`}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-800 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                Calorias por dia
+              </div>
+
+              <div className="mt-1 text-2xl font-bold">
+                {painel.resumo.caloriasPorDia ?? "—"}
+                {painel.resumo.caloriasPorDia !== null && (
+                  <span className="ml-1 text-sm font-normal text-slate-400">
+                    kcal
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                {painel.resumo.caloriasPorDia === null
+                  ? "nenhum dia registrado"
+                  : painel.resumo.diasComCalorias === 1
+                    ? "no único dia com registro, não no período todo"
+                    : `nos ${painel.resumo.diasComCalorias} dias com registro, não no período todo`}
+              </div>
+            </div>
           </div>
 
           <GraficoDeGlicemia registros={painel.serie} alvo={parametros.glicemiaAlvo} />
@@ -1090,8 +1193,11 @@ export default function Home() {
                       <div className="text-sm font-semibold">
                         {registro.glicemia} mg/dL
                         <span className="ml-2 font-normal text-slate-400">
-                          {registro.carboidratos} g ·{" "}
-                          {formatarUnidades(registro.dose)} U
+                          {registro.carboidratos} g
+                          {registro.calorias !== null
+                            ? ` · ${registro.calorias} kcal`
+                            : ""}{" "}
+                          · {formatarUnidades(registro.dose)} U
                         </span>
                       </div>
 

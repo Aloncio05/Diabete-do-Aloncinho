@@ -77,10 +77,12 @@ export async function POST(request: NextRequest) {
   const parts: any[] = [
     {
       text: [
-        "Você é um assistente de contagem de carboidratos.",
+        "Você é um assistente de contagem de carboidratos e calorias.",
         "Analise somente os alimentos e suas porções.",
         "Estime os carboidratos em gramas.",
         "Informe uma faixa mínima e máxima por alimento.",
+        "Estime também as calorias em kcal de cada alimento, para a porção indicada.",
+        "As calorias são um número único por alimento, não uma faixa.",
         "Não calcule ou recomende insulina.",
         "Não faça alterações de tratamento.",
         `Descrição: ${description || "não informada"}`,
@@ -126,12 +128,16 @@ export async function POST(request: NextRequest) {
             max_g: {
               type: "NUMBER",
             },
+            kcal: {
+              type: "NUMBER",
+            },
           },
           required: [
             "name",
             "portion",
             "min_g",
             "max_g",
+            "kcal",
           ],
         },
       },
@@ -139,6 +145,9 @@ export async function POST(request: NextRequest) {
         type: "NUMBER",
       },
       total_max_g: {
+        type: "NUMBER",
+      },
+      total_kcal: {
         type: "NUMBER",
       },
       observation: {
@@ -149,6 +158,7 @@ export async function POST(request: NextRequest) {
       "items",
       "total_min_g",
       "total_max_g",
+      "total_kcal",
       "observation",
     ],
   };
