@@ -175,6 +175,91 @@ export function normalizarDiario(valor: unknown): Diario {
   };
 }
 
+// ---------- backup em arquivo ----------
+
+const BACKUP_APP = "diabete-do-aloncinho";
+const BACKUP_VERSAO = 1;
+
+export type Backup = {
+  app: string;
+  versao: number;
+  salvoEm: string;
+  diario: Diario;
+};
+
+export type LeituraDeBackup =
+  | { ok: false; erro: string }
+  | {
+      ok: true;
+      salvoEm: string;
+      diario: Diario;
+      contagens: { registros: number; padroes: number };
+      descartados: { registros: number; padroes: number };
+    };
+
+export function montarBackup(diario: Diario, salvoEm?: string): Backup {
+  return {
+    app: BACKUP_APP,
+    versao: BACKUP_VERSAO,
+    salvoEm: salvoEm || new Date().toISOString(),
+    diario: normalizarDiario(diario),
+  };
+}
+
+// Arquivo é fronteira de confiança: pode ter sido editado, truncado ou vir de
+// outro aplicativo. Nada entra sem passar pela mesma conferência do armazenamento.
+export function lerBackup(conteudo: string): LeituraDeBackup {
+  let lido: unknown;
+
+  try {
+    lido = JSON.parse(String(conteudo || ""));
+  } catch {
+    return { ok: false, erro: "Este arquivo não é um backup: não consegui ler o conteúdo." };
+  }
+
+  if (!lido || typeof lido !== "object" || Array.isArray(lido)) {
+    return { ok: false, erro: "Este arquivo não é um backup do diário." };
+  }
+
+  const bruto = lido as Record<string, unknown>;
+
+  if (typeof bruto.app === "string" && bruto.app !== BACKUP_APP) {
+    return { ok: false, erro: "Este backup é de outro aplicativo." };
+  }
+
+  // Aceita o arquivo de backup e também um diário cru, para quem tiver copiado
+  // o conteúdo do armazenamento na mão.
+  const cru = (
+    bruto.diario && typeof bruto.diario === "object" ? bruto.diario : bruto
+  ) as Record<string, unknown>;
+
+  if (!Array.isArray(cru.registros) && !Array.isArray(cru.padroes)) {
+    return { ok: false, erro: "Não encontrei registros nem refeições padrão neste arquivo." };
+  }
+
+  const diario = normalizarDiario(cru);
+
+  return {
+    ok: true,
+    salvoEm: typeof bruto.salvoEm === "string" ? bruto.salvoEm : "",
+    diario,
+    contagens: {
+      registros: diario.registros.length,
+      padroes: diario.padroes.length,
+    },
+    descartados: {
+      registros: Math.max(
+        0,
+        (Array.isArray(cru.registros) ? cru.registros.length : 0) - diario.registros.length,
+      ),
+      padroes: Math.max(
+        0,
+        (Array.isArray(cru.padroes) ? cru.padroes.length : 0) - diario.padroes.length,
+      ),
+    },
+  };
+}
+
 export function lerDiario(): Diario {
   if (typeof localStorage === "undefined") return diarioVazio();
   try {

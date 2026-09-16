@@ -13,8 +13,10 @@ import {
   diaLocal,
   diarioVazio,
   gravarDiario,
+  lerBackup,
   lerDiario,
   media,
+  montarBackup,
   novoId,
   recorteAnterior,
   recorteDe,
@@ -463,6 +465,61 @@ export default function Home() {
       ...diario,
       padroes: diario.padroes.filter((item) => item.id !== id),
     });
+  }
+
+  function baixarBackup() {
+    const conteudo = JSON.stringify(montarBackup(diario), null, 2);
+    const url = URL.createObjectURL(
+      new Blob([conteudo], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `backup-diario-${diaLocal(new Date())}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Restaurar substitui o diário deste aparelho. O aviso diz o que entra e o
+  // que sai antes de trocar.
+  async function restaurarBackup(event: ChangeEvent<HTMLInputElement>) {
+    const arquivo = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!arquivo) return;
+
+    if (arquivo.size > 20 * 1024 * 1024) {
+      setErro("Arquivo muito grande. Envie um backup de até 20 MB.");
+      return;
+    }
+
+    const leitura = lerBackup(await arquivo.text());
+
+    if (!leitura.ok) {
+      setErro(leitura.erro);
+      return;
+    }
+
+    const descartados = leitura.descartados.registros + leitura.descartados.padroes;
+    const confirmado = window.confirm(
+      [
+        `O arquivo tem ${leitura.contagens.registros} registros e ${leitura.contagens.padroes} refeições padrão.`,
+        `Este aparelho tem ${diario.registros.length} registros e ${diario.padroes.length} refeições padrão.`,
+        descartados ? `${descartados} itens do arquivo não passaram na conferência e ficam de fora.` : "",
+        "",
+        "Restaurar substitui o que está neste aparelho. Continuar?",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    if (!confirmado) return;
+
+    setErro("");
+    atualizarDiario(leitura.diario);
   }
 
   function removerRegistro(id: string) {
@@ -1224,7 +1281,42 @@ export default function Home() {
 
           <p className="mt-4 text-xs text-slate-500">
             O painel resume os registros salvos e não prevê resultados futuros.
-            Os dados ficam neste navegador.
+          </p>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <h2 className="text-lg font-semibold">Levar para outro aparelho</h2>
+
+          <p className="mt-2 text-sm text-slate-400">
+            Seus dados ficam guardados <strong>neste navegador</strong>, então o
+            notebook e o celular não se enxergam. Baixe o backup num, restaure no
+            outro.
+          </p>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={baixarBackup}
+              className="flex-1 rounded-xl bg-slate-700 px-4 py-3 font-semibold text-white transition hover:bg-slate-600"
+            >
+              Baixar backup (.json)
+            </button>
+
+            <label className="flex-1 cursor-pointer rounded-xl border border-slate-700 px-4 py-3 text-center font-semibold text-slate-200 transition hover:bg-slate-800">
+              Restaurar backup
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={restaurarBackup}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          <p className="mt-3 text-xs text-slate-500">
+            Restaurar substitui o que está neste aparelho — o aviso mostra os dois
+            lados antes. O arquivo sai com tudo, inclusive glicemias e doses:
+            guarde como guardaria um exame.
           </p>
         </section>
       </div>

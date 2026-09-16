@@ -13,6 +13,8 @@ import {
   resumir,
   media,
   diaLocal,
+  montarBackup,
+  lerBackup,
 } from "../lib/diario.ts";
 
 const DIA = 86400000;
@@ -207,4 +209,53 @@ assert.equal(media([100, 200]), 150);
 assert.equal(media([]), null);
 assert.equal(diaLocal(new Date(2026, 8, 15, 23)), "2026-09-15", "usa o dia local, não o UTC");
 
-console.log("Diário: histórico, recorte por data e resumo conferidos.");
+// 16. Backup: o arquivo volta idêntico, com calorias e histórico de uso.
+const diarioCompleto = normalizarDiario({
+  registros: [
+    registro({ calorias: 555 }),
+    registro({ quando: "2026-09-14T11:00:00.000Z", glicemia: 90, calorias: null, tipoRefeicao: "ceia" }),
+  ],
+  padroes: [
+    {
+      nome: "Almoço de sempre", tipoRefeicao: "almoco", descricao: "arroz", porcao: "2 colheres",
+      carboidratos: 60, calorias: 520, usos: 4, criadoEm: "2026-09-01T10:00:00.000Z",
+      ultimoUso: "2026-09-14T12:00:00.000Z",
+    },
+  ],
+});
+
+const voltou = lerBackup(JSON.stringify(montarBackup(diarioCompleto, "2026-09-15T12:00:00.000Z")));
+assert.equal(voltou.ok, true);
+assert.deepEqual(voltou.diario, diarioCompleto, "o backup volta idêntico");
+assert.equal(voltou.salvoEm, "2026-09-15T12:00:00.000Z");
+assert.deepEqual(voltou.contagens, { registros: 2, padroes: 1 });
+assert.equal(voltou.diario.registros[0].calorias, 555, "a caloria sobrevive à ida e volta");
+assert.equal(voltou.diario.padroes[0].usos, 4, "o histórico de uso sobrevive");
+
+// 17. Um diário cru, sem embrulho de backup, também é aceito.
+const cru = lerBackup(JSON.stringify({ registros: [registro()], padroes: [] }));
+assert.equal(cru.ok, true);
+assert.equal(cru.contagens.registros, 1);
+
+// 18. Arquivos que não são backup são recusados com motivo, nunca pela metade.
+for (const [conteudo, motivo] of [
+  ["não é json", "json inválido"],
+  ["[1,2,3]", "lista solta"],
+  ["null", "nulo"],
+  [JSON.stringify({ app: "outro-app", diario: { registros: [] } }), "de outro aplicativo"],
+  [JSON.stringify({ qualquer: "coisa" }), "sem registros nem padrões"],
+]) {
+  const recusado = lerBackup(conteudo);
+  assert.equal(recusado.ok, false, motivo);
+  assert.ok(recusado.erro && recusado.erro.length > 10, `mensagem clara para: ${motivo}`);
+}
+
+// 19. O que não passa na conferência é contado, para a tela poder avisar.
+const parcial = lerBackup(JSON.stringify({
+  registros: [registro(), registro({ glicemia: -5 }), registro({ quando: "" })],
+  padroes: [{ nome: "Boa", carboidratos: 10 }, { nome: "", carboidratos: 10 }],
+}));
+assert.equal(parcial.ok, true);
+assert.deepEqual(parcial.descartados, { registros: 2, padroes: 1 });
+
+console.log("Diário: histórico, recorte por data, resumo e backup conferidos.");
