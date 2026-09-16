@@ -15,6 +15,7 @@ import {
   diaLocal,
   montarBackup,
   lerBackup,
+  mesclarDiarios,
 } from "../lib/diario.ts";
 
 const DIA = 86400000;
@@ -258,4 +259,56 @@ const parcial = lerBackup(JSON.stringify({
 assert.equal(parcial.ok, true);
 assert.deepEqual(parcial.descartados, { registros: 2, padroes: 1 });
 
-console.log("Diário: histórico, recorte por data, resumo e backup conferidos.");
+// 20. Mesclar: entrar na conta não pode apagar nem o local nem o do servidor.
+const noAparelho = normalizarDiario({
+  registros: [
+    registro({ id: "so-aqui", calorias: 300 }),
+    registro({ id: "nos-dois", glicemia: 199, calorias: 999 }),
+  ],
+  padroes: [
+    { id: "p-comum", nome: "Almoço", carboidratos: 60, usos: 2, ultimoUso: "2026-09-15T12:00:00.000Z" },
+    { id: "p-local", nome: "Só daqui", carboidratos: 30, usos: 1 },
+  ],
+});
+const noServidor = normalizarDiario({
+  registros: [
+    registro({ id: "so-la", quando: "2026-09-10T08:00:00.000Z", calorias: 100 }),
+    registro({ id: "nos-dois", glicemia: 111, calorias: 111 }),
+  ],
+  padroes: [
+    { id: "p-comum", nome: "Almoço", carboidratos: 60, usos: 5, ultimoUso: "2026-09-10T12:00:00.000Z" },
+    { id: "p-servidor", nome: "Só de lá", carboidratos: 40, usos: 3 },
+  ],
+});
+
+const juntos = mesclarDiarios(noAparelho, noServidor);
+assert.deepEqual(
+  juntos.registros.map((r) => r.id).sort(),
+  ["nos-dois", "so-aqui", "so-la"],
+  "nenhum registro se perde dos dois lados",
+);
+assert.equal(
+  juntos.registros.find((r) => r.id === "nos-dois").glicemia,
+  199,
+  "id repetido fica com a versão do primeiro argumento",
+);
+assert.deepEqual(
+  juntos.padroes.map((p) => p.id).sort(),
+  ["p-comum", "p-local", "p-servidor"],
+  "nenhuma refeição padrão se perde",
+);
+const comum = juntos.padroes.find((p) => p.id === "p-comum");
+assert.equal(comum.usos, 5, "usos fica com o maior dos dois aparelhos");
+assert.equal(comum.ultimoUso, "2026-09-15T12:00:00.000Z", "último uso fica com o mais recente");
+
+// Ordem cronológica, do mais novo para o mais antigo.
+assert.deepEqual(
+  juntos.registros.map((r) => r.quando),
+  [...juntos.registros.map((r) => r.quando)].sort().reverse(),
+);
+
+// Mesclar com vazio devolve o outro lado inteiro, nos dois sentidos.
+assert.deepEqual(mesclarDiarios(noAparelho, diarioVazio()).registros.length, 2);
+assert.deepEqual(mesclarDiarios(diarioVazio(), noServidor).registros.length, 2);
+
+console.log("Diário: histórico, recorte, resumo, backup e mesclagem conferidos.");

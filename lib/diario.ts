@@ -175,6 +175,44 @@ export function normalizarDiario(valor: unknown): Diario {
   };
 }
 
+// ---------- juntar dois diários ----------
+
+// Entrar na conta num aparelho que já tem diário local não pode apagar nem o
+// que está aqui nem o que está no servidor. Junta os dois pelo id; o mesmo id
+// nos dois lados fica com a versão do primeiro argumento (a mais recente).
+export function mesclarDiarios(recente: Diario, antigo: Diario): Diario {
+  const registros = new Map<string, Registro>();
+
+  for (const registro of antigo.registros) registros.set(registro.id, registro);
+  for (const registro of recente.registros) registros.set(registro.id, registro);
+
+  const padroes = new Map<string, Padrao>();
+
+  for (const padrao of antigo.padroes) padroes.set(padrao.id, padrao);
+  for (const padrao of recente.padroes) {
+    const existente = padroes.get(padrao.id);
+    padroes.set(
+      padrao.id,
+      existente
+        ? {
+            ...padrao,
+            // Cada aparelho contou os usos que viu; o maior é o mais próximo.
+            usos: Math.max(padrao.usos, existente.usos),
+            ultimoUso:
+              padrao.ultimoUso > existente.ultimoUso ? padrao.ultimoUso : existente.ultimoUso,
+          }
+        : padrao,
+    );
+  }
+
+  return {
+    registros: [...registros.values()].sort(
+      (a, b) => new Date(b.quando).getTime() - new Date(a.quando).getTime(),
+    ),
+    padroes: [...padroes.values()],
+  };
+}
+
 // ---------- backup em arquivo ----------
 
 const BACKUP_APP = "diabete-do-aloncinho";

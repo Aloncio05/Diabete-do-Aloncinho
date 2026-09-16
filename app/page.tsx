@@ -16,7 +16,9 @@ import {
   lerBackup,
   lerDiario,
   media,
+  mesclarDiarios,
   montarBackup,
+  normalizarDiario,
   novoId,
   recorteAnterior,
   recorteDe,
@@ -172,11 +174,40 @@ export default function Home() {
   const [diario, setDiario] = useState<Diario>(diarioVazio);
   const [periodo, setPeriodo] = useState<Periodo>({ dias: 30, de: "", ate: "" });
   const [salvo, setSalvo] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setDiario(lerDiario());
+    const local = lerDiario();
+
+    setDiario(local);
     setPeriodo(lerPeriodo());
+
+    // Se houver conta e banco, junta o deste aparelho com o da conta e devolve
+    // o resultado. 401 (sem login) ou 503 (sem banco) não são erro: o app
+    // simplesmente segue guardando só aqui.
+    (async () => {
+      try {
+        const resposta = await fetch("/api/diario");
+
+        if (!resposta.ok) return;
+
+        const { diario: doServidor } = await resposta.json();
+        const juntos = mesclarDiarios(local, normalizarDiario(doServidor));
+
+        setDiario(juntos);
+        gravarDiario(juntos);
+        setSincronizando(true);
+
+        await fetch("/api/diario", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ diario: juntos }),
+        });
+      } catch {
+        // Sem rede: o diário local continua valendo.
+      }
+    })();
   }, []);
 
   // Mudou algo que entra no cálculo: o registro salvo não vale mais para o que
@@ -371,9 +402,21 @@ export default function Home() {
     return Number.isFinite(valor) && valor >= 0 ? Math.round(valor) : null;
   }
 
+  // Grava sempre no aparelho primeiro: se a rede falhar, nada se perde. O envio
+  // para a conta é o extra, e uma falha nele não desfaz o que já foi salvo aqui.
   function atualizarDiario(proximo: Diario) {
     setDiario(proximo);
     gravarDiario(proximo);
+
+    if (!sincronizando) return;
+
+    fetch("/api/diario", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diario: proximo }),
+    }).catch(() => {
+      // Sem rede agora: o próximo salvamento, ou a próxima abertura, reenvia.
+    });
   }
 
   function atualizarPeriodo(proximo: Periodo) {
@@ -1288,9 +1331,19 @@ export default function Home() {
           <h2 className="text-lg font-semibold">Levar para outro aparelho</h2>
 
           <p className="mt-2 text-sm text-slate-400">
-            Seus dados ficam guardados <strong>neste navegador</strong>, então o
-            notebook e o celular não se enxergam. Baixe o backup num, restaure no
-            outro.
+            {sincronizando ? (
+              <>
+                Seu diário está <strong>sincronizado na sua conta</strong>: o
+                notebook e o celular veem o mesmo. O backup continua servindo
+                para guardar uma cópia sua, fora do servidor.
+              </>
+            ) : (
+              <>
+                Seus dados ficam guardados <strong>neste navegador</strong>, então
+                o notebook e o celular não se enxergam. Baixe o backup num,
+                restaure no outro.
+              </>
+            )}
           </p>
 
           <div className="mt-4 flex flex-wrap gap-3">
