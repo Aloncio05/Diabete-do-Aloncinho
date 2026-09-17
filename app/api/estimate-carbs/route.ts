@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+const MAX_GEMINI_ATTEMPTS = 3;
+const MAX_AUTOMATIC_RETRY_DELAY_MS = 4_000;
+const RETRYABLE_GEMINI_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const TEMPORARY_AI_ERROR =
+  "A análise por IA está temporariamente indisponível. Tente novamente em alguns instantes.";
+
 function json(status: number, body: unknown) {
   return NextResponse.json(body, {
     status,
@@ -36,9 +43,50 @@ function splitImage(dataUrl: string) {
     : null;
 }
 
+function retryAfterMs(value: string | null) {
+  const retryAfter = value?.trim();
+
+  if (!retryAfter) {
+    return null;
+  }
+
+  const seconds = Number(retryAfter);
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1_000);
+  }
+
+  const retryAt = Date.parse(retryAfter);
+
+  return Number.isFinite(retryAt)
+    ? Math.max(0, retryAt - Date.now())
+    : null;
+}
+
+function retryDelayMs(attempt: number, retryAfter: string | null) {
+  const serverDelay = retryAfterMs(retryAfter);
+
+  if (serverDelay !== null) {
+    return serverDelay <= MAX_AUTOMATIC_RETRY_DELAY_MS ? serverDelay : null;
+  }
+
+  const backoff = 500 * 2 ** attempt;
+  const jitter = Math.floor(Math.random() * 250);
+
+  return Math.min(backoff + jitter, 2_000);
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableGeminiStatus(status: number) {
+  return RETRYABLE_GEMINI_STATUSES.has(status);
+}
+
 export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
+  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
 
   if (!apiKey) {
     return json(503, {
@@ -163,49 +211,85 @@ export async function POST(request: NextRequest) {
     ],
   };
 
-  let upstream: Response;
-
-  try {
-    upstream = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        model,
-      )}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    model,
+  )}:generateContent`;
+  const requestInit = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts,
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts,
-            },
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema,
-          },
-        }),
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema,
       },
-    );
-  } catch {
-    return json(502, {
-      error: "Não foi possível acessar o serviço de IA.",
+    }),
+  };
+  let upstream: Response | null = null;
+
+  for (let attempt = 0; attempt < MAX_GEMINI_ATTEMPTS; attempt += 1) {
+    try {
+      upstream = await fetch(endpoint, requestInit);
+    } catch {
+      if (attempt < MAX_GEMINI_ATTEMPTS - 1) {
+        const delay = retryDelayMs(attempt, null);
+
+        if (delay !== null) {
+          await wait(delay);
+        }
+      }
+
+      continue;
+    }
+
+    if (
+      upstream.ok ||
+      !isRetryableGeminiStatus(upstream.status) ||
+      attempt === MAX_GEMINI_ATTEMPTS - 1
+    ) {
+      break;
+    }
+
+    const delay = retryDelayMs(attempt, upstream.headers.get("retry-after"));
+
+    if (delay === null) {
+      break;
+    }
+
+    await upstream.body?.cancel().catch(() => undefined);
+    await wait(delay);
+  }
+
+  if (!upstream) {
+    return json(503, {
+      error: TEMPORARY_AI_ERROR,
+      retryable: true,
     });
   }
 
   const raw = await upstream.json().catch(() => null);
 
   if (!upstream.ok) {
-    const message =
-      typeof raw?.error?.message === "string"
-        ? raw.error.message.slice(0, 300)
-        : "Falha na estimativa.";
+    if (isRetryableGeminiStatus(upstream.status)) {
+      return json(503, {
+        error: TEMPORARY_AI_ERROR,
+        retryable: true,
+      });
+    }
 
     return json(502, {
-      error: message,
+      error:
+        upstream.status === 404
+          ? "O modelo de IA configurado não está disponível. Verifique GEMINI_MODEL."
+          : "Não foi possível concluir a análise por IA. Verifique a configuração e tente novamente.",
     });
   }
 

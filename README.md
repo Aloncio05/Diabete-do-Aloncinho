@@ -52,6 +52,22 @@ dele. Quem não quiser isso deve usar a tabela de alimentos ou o nível pago.
 
 Nunca coloque a chave da API no navegador, no repositório ou em uma variável pública.
 
+## Login com Google
+
+Para ativar a conta e a sincronização, defina AUTH_GOOGLE_ID,
+AUTH_GOOGLE_SECRET, AUTH_SECRET e AUTH_URL no ambiente de hospedagem.
+Em **Google Cloud Console → APIs e serviços → Credenciais → seu cliente OAuth
+2.0**, cadastre exatamente este URI de redirecionamento:
+
+~~~
+https://SEU-SITE/api/auth/callback/google
+~~~
+
+Substitua SEU-SITE pelo domínio público usado em AUTH_URL, sem barra no
+final. localhost, 127.0.0.1 e cada URL de preview são origens diferentes e
+precisam de URIs próprios. A variável AUTH_TRUST_HOST trata apenas o erro
+UntrustedHost; ela não resolve redirect_uri_mismatch.
+
 Checagens, sem rede e sem chave:
 
 ```

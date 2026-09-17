@@ -179,6 +179,7 @@ export default function Home() {
   const [descricao, setDescricao] = useState("");
   const [porcao, setPorcao] = useState("");
   const [foto, setFoto] = useState<File | null>(null);
+  const [consentimentoIa, setConsentimentoIa] = useState(false);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [carboidratos, setCarboidratos] = useState("");
   const [calorias, setCalorias] = useState("");
@@ -330,6 +331,13 @@ export default function Home() {
       return;
     }
 
+    if (!consentimentoIa) {
+      setErro(
+        "Confirme a autorização para enviar os dados da refeição à análise por IA.",
+      );
+      return;
+    }
+
     setCarregando(true);
 
     try {
@@ -351,11 +359,8 @@ export default function Home() {
       const contentType = response.headers.get("content-type") || "";
 
       if (!contentType.includes("application/json")) {
-        const texto = await response.text();
-
         throw new Error(
-          `A API não respondeu em JSON. HTTP ${response.status}. ` +
-            `Resposta: ${texto.slice(0, 120)}`,
+          "A análise por IA não está disponível no momento. Tente novamente em alguns instantes.",
         );
       }
 
@@ -805,6 +810,21 @@ export default function Home() {
                 </p>
               )}
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={consentimentoIa}
+                onChange={(e) => setConsentimentoIa(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-900 text-emerald-500 accent-emerald-500"
+              />
+              <span>
+                Autorizo o envio dos dados da refeição (descrição, porção e
+                foto, se houver) ao Google Gemini para estimar carboidratos.
+                Em caso de indisponibilidade, a mesma solicitação pode ser
+                reenviada automaticamente até duas vezes.
+              </span>
+            </label>
 
             <button
               type="button"
