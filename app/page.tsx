@@ -71,7 +71,7 @@ const PARAMETROS_REFEICAO: Record<TipoRefeicao, ParametrosRefeicao> = {
   },
   jantar: {
     nome: "Jantar",
-    carboPorUnidade: 12,
+    carboPorUnidade: 8,
     sensibilidade: 60,
     glicemiaAlvo: 100,
   },
