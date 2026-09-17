@@ -83,6 +83,13 @@ const PARAMETROS_REFEICAO: Record<TipoRefeicao, ParametrosRefeicao> = {
   },
 };
 
+// Faixa pessoal já documentada pelo painel. Ela existe apenas para resumir as
+// medições visualmente e não depende do alvo usado no formulário de refeição.
+const LIMITE_INFERIOR_FAIXA_PESSOAL = 80;
+const LIMITE_SUPERIOR_FAIXA_PESSOAL = 190;
+
+type CategoriaDaFaixaPessoal = "abaixo" | "na-faixa" | "acima";
+
 function horaAtual() {
   const agora = new Date();
 
@@ -119,6 +126,16 @@ function formatarDia(valor: string) {
     day: "2-digit",
     month: "short",
   }).format(data);
+}
+
+function categoriaDaFaixaPessoal(glicemia: number): CategoriaDaFaixaPessoal {
+  if (glicemia < LIMITE_INFERIOR_FAIXA_PESSOAL) return "abaixo";
+  if (glicemia > LIMITE_SUPERIOR_FAIXA_PESSOAL) return "acima";
+  return "na-faixa";
+}
+
+function percentual(valor: number, total: number) {
+  return total ? Math.round((valor / total) * 100) : 0;
 }
 
 function lerPeriodo(): Periodo {
@@ -575,8 +592,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <main className="min-h-screen px-4 py-6 text-slate-100 sm:py-10">
+      <div className="mx-auto max-w-5xl space-y-6 sm:space-y-8">
         <header>
           <p className="text-sm font-bold uppercase tracking-wider text-emerald-400">
             Diabetes do Aloncinho
@@ -1372,6 +1389,8 @@ export default function Home() {
             guarde como guardaria um exame.
           </p>
         </section>
+
+        <GraficoDeDistribuicaoDaFaixa registros={painel.serie} />
       </div>
     </main>
   );
@@ -1479,5 +1498,117 @@ function GraficoDeGlicemia({
         refeição selecionada.
       </figcaption>
     </figure>
+  );
+}
+
+function GraficoDeDistribuicaoDaFaixa({ registros }: { registros: Registro[] }) {
+  const distribuicao = registros.reduce(
+    (atual, registro) => {
+      atual[categoriaDaFaixaPessoal(registro.glicemia)] += 1;
+      return atual;
+    },
+    { abaixo: 0, "na-faixa": 0, acima: 0 } as Record<CategoriaDaFaixaPessoal, number>,
+  );
+  const total = registros.length;
+  const abaixoPercentual = (distribuicao.abaixo / (total || 1)) * 100;
+  const faixaPercentual = (distribuicao["na-faixa"] / (total || 1)) * 100;
+  const inicioAcima = abaixoPercentual + faixaPercentual;
+  const preenchimento = total
+    ? `conic-gradient(#f6c177 0 ${abaixoPercentual}%, #57d9b4 ${abaixoPercentual}% ${inicioAcima}%, #f28b82 ${inicioAcima}% 100%)`
+    : "conic-gradient(#29433d 0 100%)";
+  const faixas = [
+    {
+      chave: "abaixo",
+      rotulo: "Abaixo da faixa",
+      detalhe: `< ${LIMITE_INFERIOR_FAIXA_PESSOAL} mg/dL`,
+      classe: "faixa-distribuicao__marcador--abaixo",
+      quantidade: distribuicao.abaixo,
+    },
+    {
+      chave: "na-faixa",
+      rotulo: "Na faixa",
+      detalhe: `${LIMITE_INFERIOR_FAIXA_PESSOAL}–${LIMITE_SUPERIOR_FAIXA_PESSOAL} mg/dL`,
+      classe: "faixa-distribuicao__marcador--faixa",
+      quantidade: distribuicao["na-faixa"],
+    },
+    {
+      chave: "acima",
+      rotulo: "Acima da faixa",
+      detalhe: `> ${LIMITE_SUPERIOR_FAIXA_PESSOAL} mg/dL`,
+      classe: "faixa-distribuicao__marcador--acima",
+      quantidade: distribuicao.acima,
+    },
+  ];
+
+  const resumo = faixas
+    .map(({ rotulo, quantidade }) => `${rotulo}: ${percentual(quantidade, total)}%`)
+    .join(". ");
+
+  return (
+    <section
+      className="faixa-distribuicao rounded-2xl border border-slate-800 bg-slate-900 p-5"
+      aria-labelledby="distribuicao-da-faixa-titulo"
+    >
+      <div className="faixa-distribuicao__cabecalho">
+        <div>
+          <p className="faixa-distribuicao__sobretitulo">Resumo visual</p>
+          <h2
+            id="distribuicao-da-faixa-titulo"
+            className="faixa-distribuicao__titulo"
+          >
+            Distribuição da faixa pessoal
+          </h2>
+        </div>
+        <p className="faixa-distribuicao__periodo">Registros do período selecionado</p>
+      </div>
+
+      <div className="faixa-distribuicao__conteudo">
+        <div
+          className="faixa-distribuicao__grafico"
+          role="img"
+          aria-label={
+            total
+              ? `Gráfico de pizza com ${total} medições. ${resumo}.`
+              : "Gráfico de pizza sem medições no período selecionado."
+          }
+        >
+          <div
+            className="faixa-distribuicao__donut"
+            style={{ background: preenchimento }}
+          >
+            <div className="faixa-distribuicao__miolo">
+              <strong className="faixa-distribuicao__total">{total || "—"}</strong>
+              <span className="faixa-distribuicao__total-rotulo">
+                {total === 1 ? "medição" : "medições"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <ul className="faixa-distribuicao__lista">
+          {faixas.map(({ chave, rotulo, detalhe, classe, quantidade }) => (
+            <li key={chave} className="faixa-distribuicao__item">
+              <span className={`faixa-distribuicao__marcador ${classe}`} />
+              <span>
+                <span className="faixa-distribuicao__item-rotulo">{rotulo}</span>
+                <span className="faixa-distribuicao__item-detalhe">
+                  {quantidade} {quantidade === 1 ? "medição" : "medições"} · {detalhe}
+                </span>
+              </span>
+              <strong className="faixa-distribuicao__percentual">
+                {percentual(quantidade, total)}%
+              </strong>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <p className="faixa-distribuicao__legenda">
+        A faixa pessoal do painel considera abaixo de {LIMITE_INFERIOR_FAIXA_PESSOAL}
+        {" mg/dL"}, de {LIMITE_INFERIOR_FAIXA_PESSOAL} a {LIMITE_SUPERIOR_FAIXA_PESSOAL}
+        {" mg/dL"} (inclusive) e acima de {LIMITE_SUPERIOR_FAIXA_PESSOAL}
+        {" mg/dL"}.
+      </p>
+    </section>
   );
 }
