@@ -965,6 +965,8 @@ export default function Home() {
               <p className="mt-2 text-xs text-slate-500">
                 JPG, PNG, WebP, HEIC e HEIF são aceitos. Prefira uma foto de
                 cima, bem iluminada, mostrando os alimentos e as porções.
+                Para ler rótulos, enquadre a tabela nutricional inteira e a
+                porção do produto.
               </p>
             </div>
 

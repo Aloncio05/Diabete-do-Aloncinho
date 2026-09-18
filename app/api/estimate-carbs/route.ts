@@ -6,6 +6,7 @@ const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 const MAX_GEMINI_ATTEMPTS = 3;
 const MAX_AUTOMATIC_RETRY_DELAY_MS = 4_000;
 const MAX_IMAGE_DATA_URL_LENGTH = 2_500_000;
+const FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite";
 const RETRYABLE_GEMINI_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const TEMPORARY_AI_ERROR =
   "A análise por IA está temporariamente indisponível. Tente novamente em alguns instantes.";
@@ -94,7 +95,10 @@ function isRetryableGeminiStatus(status: number) {
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const primaryModel =
+    process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const fallbackModel =
+    process.env.GEMINI_FALLBACK_MODEL?.trim() || FALLBACK_GEMINI_MODEL;
 
   if (!apiKey) {
     return json(503, {
@@ -159,6 +163,9 @@ export async function POST(request: NextRequest) {
           ? [
               "Use a foto como fonte principal quando não houver descrição.",
               "Liste somente os alimentos visíveis e sinalize incertezas de porção.",
+              "Se houver um rótulo nutricional legível, use os carboidratos e a porção declarados nele como fonte prioritária.",
+              "Se a porção informada for diferente da porção do rótulo, explique a diferença em observation.",
+              "Se o rótulo não estiver legível, diga isso em observation; não invente seus números.",
             ]
           : []),
         `Descrição: ${description || "não informada"}`,
@@ -231,9 +238,6 @@ export async function POST(request: NextRequest) {
     ],
   };
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    model,
-  )}:generateContent`;
   const requestInit = {
     method: "POST",
     headers: {
@@ -254,9 +258,15 @@ export async function POST(request: NextRequest) {
     }),
   };
   let upstream: Response | null = null;
+  let activeModel = primaryModel;
+  let fallbackUsed = false;
 
   for (let attempt = 0; attempt < MAX_GEMINI_ATTEMPTS; attempt += 1) {
     try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        activeModel,
+      )}:generateContent`;
+
       upstream = await fetch(endpoint, requestInit);
     } catch {
       if (attempt < MAX_GEMINI_ATTEMPTS - 1) {
@@ -279,6 +289,19 @@ export async function POST(request: NextRequest) {
     }
 
     const delay = retryDelayMs(attempt, upstream.headers.get("retry-after"));
+
+    if (
+      upstream.status === 503 &&
+      !fallbackUsed &&
+      fallbackModel !== activeModel &&
+      delay !== null
+    ) {
+      fallbackUsed = true;
+      activeModel = fallbackModel;
+      await upstream.body?.cancel().catch(() => undefined);
+      await wait(delay);
+      continue;
+    }
 
     if (delay === null) {
       break;
