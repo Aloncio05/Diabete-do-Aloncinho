@@ -87,6 +87,23 @@ const PARAMETROS_REFEICAO: Record<TipoRefeicao, ParametrosRefeicao> = {
 // medições visualmente e não depende do alvo usado no formulário de refeição.
 const LIMITE_INFERIOR_FAIXA_PESSOAL = 80;
 const LIMITE_SUPERIOR_FAIXA_PESSOAL = 190;
+const TIPOS_DE_IMAGEM_ACEITOS =
+  "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif";
+const TIPOS_DE_IMAGEM_ENVIAVEIS_DIRETAMENTE = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/gif",
+  "image/avif",
+]);
+const TAMANHO_MAXIMO_ARQUIVO_ORIGINAL = 15 * 1024 * 1024;
+const TAMANHO_MAXIMO_IMAGEM_PREPARADA = 1_500_000;
+const TAMANHO_MAXIMO_IMAGEM_DIRETA = 1_700_000;
+const LADOS_MAXIMOS_IMAGEM = [1600, 1280, 1024];
+const QUALIDADES_JPEG = [0.84, 0.72, 0.6];
 
 type CategoriaDaFaixaPessoal = "abaixo" | "na-faixa" | "acima";
 
@@ -158,7 +175,17 @@ function lerPeriodo(): Periodo {
   }
 }
 
-async function arquivoParaDataUrl(file: File) {
+function formatarTamanhoArquivo(tamanho: number) {
+  const megabytes = tamanho / 1024 / 1024;
+
+  if (megabytes >= 1) {
+    return `${megabytes.toFixed(1).replace(".", ",")} MB`;
+  }
+
+  return `${Math.max(1, Math.round(tamanho / 1024))} KB`;
+}
+
+async function arquivoParaDataUrl(file: Blob) {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
 
@@ -168,6 +195,107 @@ async function arquivoParaDataUrl(file: File) {
 
     reader.readAsDataURL(file);
   });
+}
+
+async function carregarImagem(file: File) {
+  return await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível abrir a imagem selecionada."));
+    };
+
+    image.src = url;
+  });
+}
+
+async function canvasParaJpeg(canvas: HTMLCanvasElement, quality: number) {
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+
+        reject(new Error("Não foi possível otimizar a imagem."));
+      },
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
+async function prepararImagemParaEnvio(file: File) {
+  if (!file.size) {
+    throw new Error("A foto escolhida está vazia. Tente outra imagem.");
+  }
+
+  if (file.size > TAMANHO_MAXIMO_ARQUIVO_ORIGINAL) {
+    throw new Error(
+      "A foto é grande demais. Escolha uma imagem de até 15 MB ou aproxime a câmera da refeição.",
+    );
+  }
+
+  try {
+    const image = await carregarImagem(file);
+    const larguraOriginal = image.naturalWidth;
+    const alturaOriginal = image.naturalHeight;
+
+    if (!larguraOriginal || !alturaOriginal) {
+      throw new Error("A imagem não tem dimensões válidas.");
+    }
+
+    for (const ladoMaximo of LADOS_MAXIMOS_IMAGEM) {
+      const escala = Math.min(
+        1,
+        ladoMaximo / Math.max(larguraOriginal, alturaOriginal),
+      );
+      const largura = Math.max(1, Math.round(larguraOriginal * escala));
+      const altura = Math.max(1, Math.round(alturaOriginal * escala));
+      const canvas = document.createElement("canvas");
+      const contexto = canvas.getContext("2d");
+
+      if (!contexto) {
+        throw new Error("Não foi possível preparar a imagem neste navegador.");
+      }
+
+      canvas.width = largura;
+      canvas.height = altura;
+      contexto.fillStyle = "#ffffff";
+      contexto.fillRect(0, 0, largura, altura);
+      contexto.drawImage(image, 0, 0, largura, altura);
+
+      for (const quality of QUALIDADES_JPEG) {
+        const jpeg = await canvasParaJpeg(canvas, quality);
+
+        if (jpeg.size <= TAMANHO_MAXIMO_IMAGEM_PREPARADA) {
+          return arquivoParaDataUrl(jpeg);
+        }
+      }
+    }
+  } catch {
+    // A tentativa direta abaixo cobre navegadores que não decodificam
+    // HEIC/HEIF no canvas, desde que a foto já caiba no limite seguro.
+  }
+
+  if (
+    TIPOS_DE_IMAGEM_ENVIAVEIS_DIRETAMENTE.has(file.type) &&
+    file.size <= TAMANHO_MAXIMO_IMAGEM_DIRETA
+  ) {
+    return arquivoParaDataUrl(file);
+  }
+
+  throw new Error(
+    "Não foi possível preparar essa foto. Tente uma imagem JPEG, PNG ou WebP menor e bem iluminada.",
+  );
 }
 
 export default function Home() {
@@ -194,6 +322,31 @@ export default function Home() {
   const [salvo, setSalvo] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
+
+  function selecionarFoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+
+    // Permite escolher o mesmo arquivo novamente depois de removê-lo ou de uma
+    // tentativa que falhou.
+    event.currentTarget.value = "";
+
+    if (!file) return;
+
+    if (file.type && !file.type.startsWith("image/")) {
+      setErro("Escolha uma imagem em vez de outro tipo de arquivo.");
+      return;
+    }
+
+    if (file.size > TAMANHO_MAXIMO_ARQUIVO_ORIGINAL) {
+      setErro(
+        "A foto é grande demais. Escolha uma imagem de até 15 MB ou aproxime a câmera da refeição.",
+      );
+      return;
+    }
+
+    setErro("");
+    setFoto(file);
+  }
 
   useEffect(() => {
     const local = lerDiario();
@@ -341,7 +494,9 @@ export default function Home() {
     setCarregando(true);
 
     try {
-      const imageDataUrl = foto ? await arquivoParaDataUrl(foto) : null;
+      const imageDataUrl = foto
+        ? await prepararImagemParaEnvio(foto)
+        : null;
 
       const response = await fetch("/api/estimate-carbs", {
         method: "POST",
@@ -775,10 +930,8 @@ export default function Home() {
                 <input
                   id="foto"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setFoto(e.target.files?.[0] || null)
-                  }
+                  accept={TIPOS_DE_IMAGEM_ACEITOS}
+                  onChange={selecionarFoto}
                   className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-3"
                 />
 
@@ -787,12 +940,10 @@ export default function Home() {
                 <input
                   ref={cameraRef}
                   type="file"
-                  accept="image/*"
+                  accept={TIPOS_DE_IMAGEM_ACEITOS}
                   capture="environment"
                   hidden
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setFoto(e.target.files?.[0] || null)
-                  }
+                  onChange={selecionarFoto}
                 />
 
                 <button
@@ -806,9 +957,15 @@ export default function Home() {
 
               {foto && (
                 <p className="mt-2 text-xs text-slate-400">
-                  Foto escolhida: {foto.name}
+                  Foto escolhida: {foto.name} · {formatarTamanhoArquivo(foto.size)}.
+                  Ela será reduzida neste aparelho antes do envio.
                 </p>
               )}
+
+              <p className="mt-2 text-xs text-slate-500">
+                JPG, PNG, WebP, HEIC e HEIF são aceitos. Prefira uma foto de
+                cima, bem iluminada, mostrando os alimentos e as porções.
+              </p>
             </div>
 
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-300">

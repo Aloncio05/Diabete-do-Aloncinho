@@ -5,9 +5,18 @@ export const runtime = "nodejs";
 const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 const MAX_GEMINI_ATTEMPTS = 3;
 const MAX_AUTOMATIC_RETRY_DELAY_MS = 4_000;
+const MAX_IMAGE_DATA_URL_LENGTH = 2_500_000;
 const RETRYABLE_GEMINI_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const TEMPORARY_AI_ERROR =
   "A análise por IA está temporariamente indisponível. Tente novamente em alguns instantes.";
+const IMAGE_DATA_URL_PATTERN =
+  /^data:(image\/(?:jpeg|jpg|png|webp|heic|heif|gif|avif));base64,([A-Za-z0-9+/]+={0,2})$/;
+
+type ImagemNormalizada =
+  | { status: "ausente" }
+  | { status: "invalida" }
+  | { status: "grande" }
+  | { status: "valida"; mimeType: string; data: string };
 
 function json(status: number, body: unknown) {
   return NextResponse.json(body, {
@@ -19,28 +28,27 @@ function json(status: number, body: unknown) {
 }
 
 function normalizeImage(value: unknown) {
-  if (value == null || value === "") return null;
-
-  if (typeof value !== "string" || value.length > 2_500_000) {
-    return undefined;
+  if (value == null || value === "") {
+    return { status: "ausente" } as const;
   }
 
-  return /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(
-    value,
-  )
-    ? value
-    : undefined;
-}
+  if (typeof value !== "string") {
+    return { status: "invalida" } as const;
+  }
 
-function splitImage(dataUrl: string) {
-  const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
+  if (value.length > MAX_IMAGE_DATA_URL_LENGTH) {
+    return { status: "grande" } as const;
+  }
+
+  const match = IMAGE_DATA_URL_PATTERN.exec(value);
 
   return match
     ? {
+        status: "valida" as const,
         mimeType: match[1],
         data: match[2],
       }
-    : null;
+    : { status: "invalida" as const };
 }
 
 function retryAfterMs(value: string | null) {
@@ -114,9 +122,23 @@ export async function POST(request: NextRequest) {
       ? body.portion.trim()
       : "";
 
-  const imageDataUrl = normalizeImage(body?.imageDataUrl);
+  const image = normalizeImage(body?.imageDataUrl) as ImagemNormalizada;
 
-  if ((!description && !imageDataUrl) || imageDataUrl === undefined) {
+  if (image.status === "grande") {
+    return json(413, {
+      error:
+        "A foto é grande demais para enviar. Escolha outra imagem ou aproxime a câmera da refeição.",
+    });
+  }
+
+  if (image.status === "invalida") {
+    return json(400, {
+      error:
+        "Formato de imagem não suportado. Use JPEG, PNG, WebP, HEIC, HEIF, GIF ou AVIF.",
+    });
+  }
+
+  if (!description && image.status === "ausente") {
     return json(400, {
       error: "Informe a refeição por texto ou envie uma foto válida.",
     });
@@ -133,21 +155,19 @@ export async function POST(request: NextRequest) {
         "As calorias são um número único por alimento, não uma faixa.",
         "Não calcule ou recomende insulina.",
         "Não faça alterações de tratamento.",
+        ...(image.status === "valida"
+          ? [
+              "Use a foto como fonte principal quando não houver descrição.",
+              "Liste somente os alimentos visíveis e sinalize incertezas de porção.",
+            ]
+          : []),
         `Descrição: ${description || "não informada"}`,
         `Porção: ${portion || "não informada"}`,
       ].join("\n"),
     },
   ];
 
-  if (imageDataUrl) {
-    const image = splitImage(imageDataUrl);
-
-    if (!image) {
-      return json(400, {
-        error: "Imagem inválida.",
-      });
-    }
-
+  if (image.status === "valida") {
     parts.push({
       inlineData: {
         mimeType: image.mimeType,
@@ -293,10 +313,15 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const text =
-    raw?.candidates?.[0]?.content?.parts?.find(
-      (part: any) => typeof part?.text === "string",
-    )?.text;
+  const responseParts = raw?.candidates?.[0]?.content?.parts;
+  const text = Array.isArray(responseParts)
+    ? [...responseParts]
+        .reverse()
+        .find(
+          (part: any) =>
+            part?.thought !== true && typeof part?.text === "string",
+        )?.text
+    : undefined;
 
   if (!text) {
     return json(502, {
